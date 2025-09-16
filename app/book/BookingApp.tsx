@@ -141,7 +141,7 @@ export default function BookingApp() {
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !data?.ok) throw new Error(data?.error || "Грешка при запис.");
-      setSuccess("Успешно записахте час! Проверете имейла си за потвърждение.");
+      setSuccess("Успешно записахте час!");
       setSelectedTime(null);
       setForm({
         firstName: "",
@@ -373,7 +373,7 @@ export default function BookingApp() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="h-12 rounded-lg bg-gradient-to-r from-sky-500 to-emerald-500 text-white font-medium hover:opacity-95 disabled:opacity-60"
+                  className="h-12 rounded-lg bg-gradient-to-r from-sky-500 to-emerald-500 text-white font-medium object-aligh center hover:opacity-95 disabled:opacity-60 "
                 >
                   {loading ? "Записване…" : "Запази"}
                 </button>

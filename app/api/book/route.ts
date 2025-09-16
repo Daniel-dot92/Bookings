@@ -121,18 +121,21 @@ export async function POST(req: NextRequest) {
 Симптоми: ${symptoms || "—"}
 Източник: Уебсайт`;
 
-    const res = await cal.events.insert({
-      calendarId: process.env.BOOKING_CALENDAR_ID!,
-      requestBody: {
-        summary,
-        description,
-        start: { dateTime: startUtc.toISOString(), timeZone: "Europe/Sofia" },
-        end: { dateTime: endUtc.toISOString(), timeZone: "Europe/Sofia" },
-        attendees: [{ email }],
-        reminders: { useDefault: true },
-      },
-      sendUpdates: "all",
-    });
+   const res = await cal.events.insert({
+  calendarId: process.env.BOOKING_CALENDAR_ID!,
+  requestBody: {
+    summary,
+    description,
+    start: { dateTime: startUtc.toISOString(), timeZone: "Europe/Sofia" },
+    end:   { dateTime: endUtc.toISOString(),   timeZone: "Europe/Sofia" },
+
+    // НЯМА attendees при service account
+    guestsCanInviteOthers: false,
+    guestsCanModify: false,
+    guestsCanSeeOtherGuests: false,
+  },
+  //sendUpdates: 'all', // махаме го – няма смисъл без attendees
+});
 
     // Ако заявката е от HTML форма – върни проста страница „Успех“
     const ct = req.headers.get("content-type") || "";
