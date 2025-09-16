@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import Calendar from "@/app/components/Calendar";
 import { fmtDateHeader } from "@/app/lib/ui";
 
@@ -32,7 +33,7 @@ export default function BookingApp() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // успех – ще показваме отделен екран
+  // успех – показваме отделен екран и скриваме UI
   const [successText, setSuccessText] = React.useState<string | null>(null);
 
   // за логиката с 60 мин. и бележки
@@ -52,19 +53,21 @@ export default function BookingApp() {
   // контейнерът със скрол за часовете
   const listRef = React.useRef<HTMLDivElement>(null);
 
-  // поправка за hydration (timezone)
+  // ---- поправка за hydration (timezone) ----
   const [mounted, setMounted] = React.useState(false);
   const [clientTz, setClientTz] = React.useState<string>("");
   React.useEffect(() => {
     setMounted(true);
     setClientTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
+  // -----------------------------------------
 
   // зареждане на слотове
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     setNote(null);
+
     try {
       const d = ymd(date);
       const res = await fetch(`/api/availability?date=${d}&duration=${duration}`);
@@ -130,7 +133,7 @@ export default function BookingApp() {
 
       if (!res.ok || !data?.ok) throw new Error(data?.error || "Грешка при запис.");
 
-      // успех – показваме потвърждение и СКРИВАМЕ календар/часове/форма
+      // успех – показваме само потвърждението (скриваме календара/часовете)
       const [h, m] = selectedTime.split(":").map((n) => Number(n));
       const start = new Date(date);
       start.setHours(h, m, 0, 0);
@@ -143,18 +146,9 @@ export default function BookingApp() {
         `Успешно запазихте час! ${fmtDateHeader(date)} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)`
       );
 
-      // нулираме селектирания час и полетата (без да презареждаме часовете)
+      // чистим локални състояния
       setSelectedTime(null);
-      setForm({
-        firstName: "",
-        lastName: "",
-        email: "",
-        phone: "",
-        procedure: "",
-        symptoms: "",
-      });
-
-      // ВАЖНО: НЕ викаме load() тук, за да НЕ изчезне successText.
+      setForm({ firstName: "", lastName: "", email: "", phone: "", procedure: "", symptoms: "" });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Грешка при запис.");
     } finally {
@@ -162,36 +156,29 @@ export default function BookingApp() {
     }
   }
 
-  // Ново записване след успех
-  async function startNewBooking() {
-    setSuccessText(null);
-    setSelectedTime(null);
-    await load(); // чак сега обновяваме слотовете
-  }
-
-  // Ако има successText – показваме само екрана за успех
+  // --- Ако има успех, показваме само екрана за потвърждение и приключваме рендъра ---
   if (successText) {
     return (
       <div className="min-h-screen bg-white">
         <div className="mx-auto max-w-3xl px-4 py-10">
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 shadow-sm">
-            <div className="px-6 py-8">
-              <h2 className="text-[22px] font-semibold text-emerald-900 mb-2">
-                Успешно запазихте час!
-              </h2>
-              <p className="text-emerald-800">{successText}</p>
+            <div className="px-6 py-6">
+              <h2 className="text-xl font-semibold text-emerald-800 mb-2">Потвърждение</h2>
+              <div className="text-emerald-900">{successText}</div>
+
               <div className="mt-6 flex gap-3">
-                <a
+                <Link
                   href="/"
-                  className="inline-flex h-11 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
+                  className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
                 >
                   Назад към сайта
-                </a>
+                </Link>
                 <button
-                  onClick={startNewBooking}
-                  className="inline-flex h-11 items-center rounded-lg border border-emerald-600 px-4 text-emerald-700 hover:bg-emerald-100"
+                  type="button"
+                  onClick={() => (window.location.href = "/")}
+                  className="inline-flex h-10 items-center rounded-lg border border-emerald-600 px-4 text-emerald-700 hover:bg-emerald-100"
                 >
-                  Нова резервация
+                  Готово
                 </button>
               </div>
             </div>
@@ -200,12 +187,11 @@ export default function BookingApp() {
       </div>
     );
   }
+  // ------------------------------------------------------------------------------------------------
 
-  // Нормален екран: календар + часове + (условно) форма
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-6xl px-4 py-8">
-
         {/* РЕД: Календар + Часове */}
         <div className="flex flex-col md:flex-row gap-4 items-stretch">
           {/* КАЛЕНДАР – голям панел */}
@@ -331,7 +317,7 @@ export default function BookingApp() {
           </div>
         </div>
 
-        {/* ФОРМА – само ако има избран час */}
+        {/* ПАНЕЛ – ФОРМА под двата панела (показва се когато има избран час) */}
         {selectedTime && (
           <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200">
@@ -428,7 +414,7 @@ export default function BookingApp() {
                   onClick={() => window.history.back()}
                   className="h-12 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
                 >
-                  Отказ
+                  Откажи
                 </button>
                 <button
                   type="submit"
