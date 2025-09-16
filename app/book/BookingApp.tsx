@@ -16,6 +16,15 @@ type FormData = {
   symptoms?: string;
 };
 
+// + добави най-отгоре до ymd():
+function tomorrow() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+
 function ymd(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -25,7 +34,7 @@ function ymd(d: Date) {
 
 export default function BookingApp() {
   // базови състояния
-  const [date, setDate] = React.useState(new Date());
+ const [date, setDate] = React.useState(tomorrow());
   const [duration, setDuration] = React.useState<30 | 60>(30);
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
@@ -173,13 +182,7 @@ export default function BookingApp() {
                 >
                   Назад към сайта
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => (window.location.href = "/")}
-                  className="inline-flex h-10 items-center rounded-lg border border-emerald-600 px-4 text-emerald-700 hover:bg-emerald-100"
-                >
-                  Готово
-                </button>
+               
               </div>
             </div>
           </div>

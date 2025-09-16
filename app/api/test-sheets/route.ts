@@ -1,3 +1,4 @@
+// app/api/test-sheets/route.ts
 import { NextResponse } from "next/server";
 import { getSheets } from "@/app/lib/google";
 
@@ -21,7 +22,9 @@ export async function GET() {
       range: `${sheetName}!A1`,
       valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
-      requestBody: { values: [[stamp, "TEST", "00:00", 30, "Test", "Row", "test@example.com", "000", "proc", "sym", "eventId", "api/test-sheets"]] },
+      requestBody: {
+        values: [[stamp, "TEST", "00:00", 30, "Test", "Row", "test@example.com", "000", "proc", "sym", "test-event", "api/test-sheets"]],
+      },
     });
 
     return NextResponse.json({ ok: true, updates: resp.data.updates });
