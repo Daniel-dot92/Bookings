@@ -23,33 +23,24 @@ function ymd(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-// помощни за диапазона (от утре до +21 дни)
-function startOfDayLocal(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-const todayStart = startOfDayLocal(new Date());
-const minDate = new Date(todayStart); // утре 00:00
-minDate.setDate(minDate.getDate() + 1);
-const maxDate = new Date(minDate); // +21 дни напред
-maxDate.setDate(maxDate.getDate() + 21);
-function isInAllowedRange(d: Date) {
-  const s = startOfDayLocal(d);
-  return s >= minDate && s <= maxDate;
-}
-
 export default function BookingApp() {
+  // базови състояния
   const [date, setDate] = React.useState(new Date());
   const [duration, setDuration] = React.useState<30 | 60>(30);
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
+
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [success, setSuccess] = React.useState<string | null>(null);
+
+  // успех – когато е попълнено, показваме само панела за успех
+  const [successText, setSuccessText] = React.useState<string | null>(null);
+
+  // логика за 60 мин. и бележка
   const [hourAvailable, setHourAvailable] = React.useState(true);
   const [note, setNote] = React.useState<string | null>(null);
 
+  // форма
   const [form, setForm] = React.useState<FormData>({
     firstName: "",
     lastName: "",
@@ -59,26 +50,25 @@ export default function BookingApp() {
     symptoms: "",
   });
 
-  // контейнерът със скрол за часовете
+  // контейнер със скрол за часовете
   const listRef = React.useRef<HTMLDivElement>(null);
 
+  // поправка за hydration (timezone)
+  const [mounted, setMounted] = React.useState(false);
+  const [clientTz, setClientTz] = React.useState<string>("");
+  React.useEffect(() => {
+    setMounted(true);
+    setClientTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
+
+  // зареждане на слотове
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
-    setSuccess(null);
+    // !!! НЕ нулираме successText тук, за да не изчезва съобщението на Vercel
+    setNote(null);
 
-    // не нулираме избрания час тук, за да не изчезва формата, ако има
     try {
-      // ако датата е извън позволения диапазон – не зареждаме
-      if (!isInAllowedRange(date)) {
-        setSlots([]);
-        setHourAvailable(true);
-        setNote("Записването е позволено от утре до 3 седмици напред.");
-        return;
-      } else {
-        setNote(null);
-      }
-
       const d = ymd(date);
       const res = await fetch(`/api/availability?date=${d}&duration=${duration}`);
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
@@ -117,31 +107,45 @@ export default function BookingApp() {
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [date, duration]);
 
+  // submit
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!selectedTime) {
       setError("Моля, изберете час.");
       return;
     }
-
-    // клиентска защита – ако датата е извън диапазона
-    if (!isInAllowedRange(date)) {
-      setError("Може да записвате от утре до 3 седмици напред.");
-      return;
-    }
-
     setLoading(true);
     setError(null);
-    setSuccess(null);
+
     try {
+      const body = {
+        date: ymd(date),
+        time: selectedTime,
+        duration,
+        ...form,
+      };
       const res = await fetch("/api/book", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: ymd(date), time: selectedTime, duration, ...form }),
+        body: JSON.stringify(body),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
+
       if (!res.ok || !data?.ok) throw new Error(data?.error || "Грешка при запис.");
-      setSuccess("Успешно записахте час!");
+
+      // успех – изчисляваме интервала и показваме съобщението
+      const [h, m] = selectedTime.split(":").map((n) => Number(n));
+      const start = new Date(date);
+      start.setHours(h, m, 0, 0);
+      const end = new Date(start.getTime() + duration * 60 * 1000);
+      const toHHMM = (d: Date) =>
+        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+      setSuccessText(
+        `Успешно запазихте час! ${fmtDateHeader(date)} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)`
+      );
+
+      // нулираме формата и избрания час (UI така или иначе се скрива)
       setSelectedTime(null);
       setForm({
         firstName: "",
@@ -151,7 +155,8 @@ export default function BookingApp() {
         procedure: "",
         symptoms: "",
       });
-      await load();
+
+      // НЕ викаме load() веднага – за да не се изтрие successText
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Грешка при запис.");
     } finally {
@@ -159,7 +164,41 @@ export default function BookingApp() {
     }
   }
 
-  const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Ако имаме successText – показваме само панела за успех
+  if (successText) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="mx-auto max-w-3xl px-4 py-10">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 shadow-sm">
+            <div className="px-6 py-6">
+              <h2 className="text-emerald-800 font-semibold text-lg mb-2">
+                {successText}
+              </h2>
+              <div className="mt-4 flex gap-3">
+                <a
+                  href="/"
+                  className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
+                >
+                  Назад към сайта
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // за нова резервация – рестарт на екрана и презареждане на слотовете
+                    setSuccessText(null);
+                    void load();
+                  }}
+                  className="inline-flex h-10 items-center rounded-lg border border-emerald-600 px-4 text-emerald-700 hover:bg-emerald-100"
+                >
+                  Нова резервация
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -172,15 +211,20 @@ export default function BookingApp() {
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
                 Запази час сега
               </h2>
+
               <Calendar value={date} onChange={setDate} />
-              <div className="mt-4 flex items-center gap-2 text-xs text-slate-600">
+
+              <div
+                className="mt-4 flex items-center gap-2 text-xs text-slate-600"
+                suppressHydrationWarning
+              >
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                {tzName}
+                <span>{mounted ? clientTz : ""}</span>
               </div>
             </div>
           </div>
 
-          {/* ЧАСОВЕ – тесен панел, залепен вдясно */}
+          {/* ЧАСОВЕ – тесен панел, вдясно */}
           <div className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="px-4 pt-4">
               <div className="text-sm font-medium text-slate-900">{fmtDateHeader(date)}</div>
@@ -277,7 +321,7 @@ export default function BookingApp() {
           </div>
         </div>
 
-        {/* ТРЕТИ ПАНЕЛ – ФОРМАТА под двата панела */}
+        {/* ПАНЕЛ – ФОРМА (само когато има избран час) */}
         {selectedTime && (
           <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200">
@@ -290,7 +334,7 @@ export default function BookingApp() {
             </div>
 
             <form onSubmit={submit} className="p-6 space-y-4">
-              {/* Име + Фамилия */}
+              {/* ред 1: Име / Фамилия */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Име</label>
@@ -314,7 +358,7 @@ export default function BookingApp() {
                 </div>
               </div>
 
-              {/* Телефон + Процедура */}
+              {/* ред 2: Телефон / Процедура */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Телефон</label>
@@ -338,7 +382,7 @@ export default function BookingApp() {
                 </div>
               </div>
 
-              {/* Имейл */}
+              {/* ред 3: Имейл */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Имейл</label>
                 <input
@@ -366,16 +410,23 @@ export default function BookingApp() {
 
               {/* Съобщения */}
               {error && <div className="text-sm text-red-600">{error}</div>}
-              {success && <div className="text-sm text-emerald-600">{success}</div>}
 
-              {/* Бутон */}
+              {/* Бутони */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { if (typeof window !== "undefined") window.history.back(); }}
+                  className="h-12 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                >
+                  Отказ
+                </button>
+
                 <button
                   type="submit"
                   disabled={loading}
-                  className="h-12 rounded-lg bg-gradient-to-r from-sky-500 to-emerald-500 text-white font-medium object-aligh center hover:opacity-95 disabled:opacity-60 "
+                  className="h-12 rounded-lg bg-gradient-to-r from-sky-500 to-emerald-500 text-white font-medium hover:opacity-95 disabled:opacity-60"
                 >
-                  {loading ? "Записване…" : "Запази"}
+                  {loading ? "Изпращане…" : "Запази"}
                 </button>
               </div>
             </form>
