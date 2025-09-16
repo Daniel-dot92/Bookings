@@ -316,29 +316,7 @@ export default function BookingApp() {
           </div>
         </div>
 
-        {/* Резервации за деня */}
-        <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <h3 className="text-[18px] font-semibold text-slate-900">Резервации за деня</h3>
-          </div>
-          <div className="p-6 text-sm text-slate-700">
-            {events.length === 0 ? (
-              <div className="text-slate-500">Няма събития за избраната дата.</div>
-            ) : (
-              <ul className="space-y-2">
-                {events.map((ev) => (
-                  <li key={ev.id} className="flex items-center justify-between">
-                    <span className="font-medium">{ev.summary}</span>
-                    <span className="text-slate-500">
-                      {fmtHHmmSofia(ev.start)}–{fmtHHmmSofia(ev.end)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-
+       
         {/* ФОРМА */}
         {selectedTime && (
           <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
