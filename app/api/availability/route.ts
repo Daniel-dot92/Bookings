@@ -1,87 +1,79 @@
+// app/api/availability/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getCalendar } from "@/app/lib/google";
-import {
-  dayBounds,
-  generateSlots,
-  fmtHHmmLocal,
-  parseZoned,
-} from "@/app/lib/datetime";
-import { WORKING_HOURS } from "@/app/lib/hours";
-import { addMinutes } from "date-fns";
+import { dayBounds, generateSlots, fmtHHmmLocal } from "@/app/lib/datetime";
 
-/**
- * GET /api/availability?date=YYYY-MM-DD&duration=30|60
- */
+export const runtime = "nodejs";          // важнo за Vercel (НЕ Edge)
+export const dynamic = "force-dynamic";   // без кеш
+
+type Slot = { time: string; available: boolean };
+
 export async function GET(req: NextRequest) {
   try {
-    const date = req.nextUrl.searchParams.get("date"); // YYYY-MM-DD
-    const duration = Number(
-      req.nextUrl.searchParams.get("duration") || "30",
-    ); // 30|60
+    const { searchParams } = new URL(req.url);
+    const date = searchParams.get("date") || "";
+    const duration = Number(searchParams.get("duration") || "30"); // 30 | 60
 
     if (!date || (duration !== 30 && duration !== 60)) {
-      return NextResponse.json(
-        { slots: [], error: "invalid params" },
-        { status: 400 },
-      );
+      return NextResponse.json({ slots: [] });
     }
 
-    // Работно време според деня от седмицата
-    const dow = new Date(date).getDay();
-    const hours = WORKING_HOURS[dow];
-    if (!hours) return NextResponse.json({ slots: [] }); // почивен ден
+    const calId = process.env.BOOKING_CALENDAR_ID;
+    if (!calId) {
+      console.error("BOOKING_CALENDAR_ID is missing.");
+      return NextResponse.json({ slots: [] }, { status: 500 });
+    }
 
-    // Google Calendar Free/Busy
     const cal = getCalendar();
-    const { timeMin, timeMax } = dayBounds(date);
 
+    // Работно време – при нужда смени
+    const WORK_START = "09:00";
+    const WORK_END   = "18:30";
+
+    // Изтегляме busy за деня
+    const { timeMin, timeMax } = dayBounds(date);
     const fb = await cal.freebusy.query({
       requestBody: {
         timeMin,
         timeMax,
         timeZone: "Europe/Sofia",
-        items: [{ id: process.env.BOOKING_CALENDAR_ID! }],
+        items: [{ id: calId }],
       },
     });
 
-    // Списък от заетите интервали [start, end)
     const busy =
-      (fb.data.calendars?.[process.env.BOOKING_CALENDAR_ID!]?.busy as
-        | Array<{ start?: string | null; end?: string | null }>
-        | undefined) || [];
+      (fb.data.calendars?.[calId]?.busy as Array<{ start?: string | null; end?: string | null }> | undefined) || [];
 
-    // Кандидат-слотове през 30 минути
-    const candidates = Array.from(
-      generateSlots(date, hours.start, hours.end, 30),
-    );
-
-    // Край на работния ден (UTC) – за да не предлагаме 18:30 → 19:30, ако краят е 19:00
-    const workEndUtc = parseZoned(date, hours.end);
-
-    // Проверка за застъпване с „busy“
-    function overlapsAny(startUtc: Date, endUtc: Date) {
-      return busy.some((b) => {
+    // Правим прост helper, който казва дали даден интервал [s, e) се засича с busy интервал
+    function isFree(start: Date, end: Date) {
+      return !busy.some((b) => {
         const bStart = new Date(b.start ?? "");
         const bEnd = new Date(b.end ?? "");
-        return startUtc < bEnd && endUtc > bStart;
+        return start < bEnd && end > bStart;
       });
     }
 
-    // Финални слотове за избраната продължителност
-    const slots = candidates.map((startUtc) => {
-      const endUtc = addMinutes(startUtc, duration);
-      const fitsInWorkingHours = endUtc <= workEndUtc;
-      const free = fitsInWorkingHours && !overlapsAny(startUtc, endUtc);
-      return { time: fmtHHmmLocal(startUtc), available: free };
-    });
+    const slots: Slot[] = [];
+
+    // генерираме на 30 минути
+    for (const t of generateSlots(date, WORK_START, WORK_END, 30)) {
+      const start = t;
+      const end = new Date(start.getTime() + 30 * 60 * 1000);
+      const label = fmtHHmmLocal(start);
+
+      if (duration === 30) {
+        slots.push({ time: label, available: isFree(start, end) });
+      } else {
+        // за 60 мин – трябва и следващият 30-мин сегмент да е свободен
+        const end60 = new Date(start.getTime() + 60 * 60 * 1000);
+        const ok = isFree(start, end) && isFree(end, end60);
+        slots.push({ time: label, available: ok });
+      }
+    }
 
     return NextResponse.json({ slots });
-  } catch (e: unknown) {
-    console.error("availability error:", e);
-    const message = e instanceof Error ? e.message : "server error";
-    return NextResponse.json(
-      { slots: [], error: message },
-      { status: 500 },
-    );
+  } catch (e) {
+    console.error("AVAILABILITY ERROR:", e);
+    return NextResponse.json({ slots: [] }, { status: 500 });
   }
 }
