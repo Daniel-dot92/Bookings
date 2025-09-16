@@ -22,16 +22,8 @@ function ymd(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-type Step = "select" | "form" | "done";
-
 export default function BookingApp() {
-  // --- за да избегнем hydration разминавания в продъкшън ---
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
-  // ---------------------------------------------------------
-
-  const [step, setStep] = React.useState<Step>("select");
-
+  // базови състояния
   const [date, setDate] = React.useState(new Date());
   const [duration, setDuration] = React.useState<30 | 60>(30);
   const [slots, setSlots] = React.useState<Slot[]>([]);
@@ -40,12 +32,14 @@ export default function BookingApp() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // текстът за финален успех (използва се в step==="done")
+  // успех – ще показваме отделен екран
   const [successText, setSuccessText] = React.useState<string | null>(null);
 
+  // за логиката с 60 мин. и бележки
   const [hourAvailable, setHourAvailable] = React.useState(true);
   const [note, setNote] = React.useState<string | null>(null);
 
+  // форма
   const [form, setForm] = React.useState<FormData>({
     firstName: "",
     lastName: "",
@@ -58,9 +52,11 @@ export default function BookingApp() {
   // контейнерът със скрол за часовете
   const listRef = React.useRef<HTMLDivElement>(null);
 
-  // client time-zone (показваме го само на клиента)
+  // поправка за hydration (timezone)
+  const [mounted, setMounted] = React.useState(false);
   const [clientTz, setClientTz] = React.useState<string>("");
   React.useEffect(() => {
+    setMounted(true);
     setClientTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
 
@@ -69,7 +65,6 @@ export default function BookingApp() {
     setLoading(true);
     setError(null);
     setNote(null);
-
     try {
       const d = ymd(date);
       const res = await fetch(`/api/availability?date=${d}&duration=${duration}`);
@@ -100,38 +95,47 @@ export default function BookingApp() {
     }
   }, [date, duration]);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
   // При смяна на дата/продължителност – връщаме скрола най-горе
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [date, duration]);
 
-  // когато изберем час - минаваме към стъпка "form"
-  React.useEffect(() => {
-    if (selectedTime) setStep("form");
-  }, [selectedTime]);
-
+  // submit
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!selectedTime) { setError("Моля, изберете час."); return; }
+    if (!selectedTime) {
+      setError("Моля, изберете час.");
+      return;
+    }
     setLoading(true);
     setError(null);
 
     try {
-      const payload = { date: ymd(date), time: selectedTime, duration, ...form };
+      const body = {
+        date: ymd(date),
+        time: selectedTime,
+        duration,
+        ...form,
+      };
       const res = await fetch("/api/book", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
+
       if (!res.ok || !data?.ok) throw new Error(data?.error || "Грешка при запис.");
 
-      // построяваме финалното съобщение
-      const [h, m] = selectedTime.split(":").map(Number);
-      const start = new Date(date); start.setHours(h, m, 0, 0);
+      // успех – показваме потвърждение и СКРИВАМЕ календар/часове/форма
+      const [h, m] = selectedTime.split(":").map((n) => Number(n));
+      const start = new Date(date);
+      start.setHours(h, m, 0, 0);
       const end = new Date(start.getTime() + duration * 60 * 1000);
+
       const toHHMM = (d: Date) =>
         `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
@@ -139,13 +143,18 @@ export default function BookingApp() {
         `Успешно запазихте час! ${fmtDateHeader(date)} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)`
       );
 
-      // чистим и минаваме към "done"
+      // нулираме селектирания час и полетата (без да презареждаме часовете)
       setSelectedTime(null);
-      setForm({ firstName: "", lastName: "", email: "", phone: "", procedure: "", symptoms: "" });
-      setStep("done");
+      setForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        procedure: "",
+        symptoms: "",
+      });
 
-      // презареждаме слотовете, за да се скрие заетият
-      await load();
+      // ВАЖНО: НЕ викаме load() тук, за да НЕ изчезне successText.
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Грешка при запис.");
     } finally {
@@ -153,34 +162,34 @@ export default function BookingApp() {
     }
   }
 
-  // бутони
-  const handleCancel = () => {
-    // връщаме към предишната страница
-    if (typeof window !== "undefined") window.history.back();
-  };
+  // Ново записване след успех
+  async function startNewBooking() {
+    setSuccessText(null);
+    setSelectedTime(null);
+    await load(); // чак сега обновяваме слотовете
+  }
 
-  // ако още не сме на клиента – не рендерирай нищо (избягва hydration warning)
-  if (!mounted) return null;
-
-  // === СТЪПКА "DONE": показваме само успех съобщение ===
-  if (step === "done") {
+  // Ако има successText – показваме само екрана за успех
+  if (successText) {
     return (
       <div className="min-h-screen bg-white">
-        <div className="mx-auto max-w-3xl px-4 py-12">
+        <div className="mx-auto max-w-3xl px-4 py-10">
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 shadow-sm">
             <div className="px-6 py-8">
-              <h2 className="text-2xl font-semibold text-emerald-800 mb-2">Благодарим!</h2>
-              <p className="text-emerald-900">{successText ?? "Успешно запазихте час."}</p>
+              <h2 className="text-[22px] font-semibold text-emerald-900 mb-2">
+                Успешно запазихте час!
+              </h2>
+              <p className="text-emerald-800">{successText}</p>
               <div className="mt-6 flex gap-3">
                 <a
-                  href={process.env.NEXT_PUBLIC_RETURN_URL || "/"}
-                  className="inline-flex h-11 items-center rounded-lg bg-emerald-600 px-5 text-white hover:bg-emerald-700"
+                  href="/"
+                  className="inline-flex h-11 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
                 >
                   Назад към сайта
                 </a>
                 <button
-                  onClick={() => { setStep("select"); setSuccessText(null); }}
-                  className="inline-flex h-11 items-center rounded-lg border border-emerald-600 px-5 text-emerald-700 hover:bg-emerald-100"
+                  onClick={startNewBooking}
+                  className="inline-flex h-11 items-center rounded-lg border border-emerald-600 px-4 text-emerald-700 hover:bg-emerald-100"
                 >
                   Нова резервация
                 </button>
@@ -192,7 +201,7 @@ export default function BookingApp() {
     );
   }
 
-  // === СТЪПКИ "SELECT" и "FORM" ===
+  // Нормален екран: календар + часове + (условно) форма
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-6xl px-4 py-8">
@@ -208,9 +217,12 @@ export default function BookingApp() {
 
               <Calendar value={date} onChange={setDate} />
 
-              <div className="mt-4 flex items-center gap-2 text-xs text-slate-600" suppressHydrationWarning>
+              <div
+                className="mt-4 flex items-center gap-2 text-xs text-slate-600"
+                suppressHydrationWarning
+              >
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <span>{clientTz}</span>
+                <span>{mounted ? clientTz : ""}</span>
               </div>
             </div>
           </div>
@@ -259,10 +271,13 @@ export default function BookingApp() {
               ) : slots.length === 0 ? (
                 <div className="text-sm text-slate-500">Няма свободни часове за този ден.</div>
               ) : (
-                <div ref={listRef} className="ml-auto max-w-[260px] h-[348px] overflow-y-auto pr-1">
+                <div
+                  ref={listRef}
+                  className="ml-auto max-w-[260px] h-[348px] overflow-y-auto pr-1"
+                >
                   <div className="flex flex-col gap-3">
                     {slots.map((s) => {
-                      const isSelected = selectedTime === s.time;
+                      const selected = selectedTime === s.time;
                       const base =
                         "w-full h-12 flex items-center justify-between rounded-lg border px-3 text-sm transition";
 
@@ -286,16 +301,26 @@ export default function BookingApp() {
                           key={s.time}
                           onClick={() => setSelectedTime(s.time)}
                           className={
-                            isSelected
+                            selected
                               ? `${base} bg-blue-600 border-blue-600 text-white`
                               : `${base} bg-white border-blue-200 text-blue-700 hover:bg-blue-50`
                           }
                         >
                           <span className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${isSelected ? "bg-white" : "bg-emerald-500"}`} />
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                selected ? "bg-white" : "bg-emerald-500"
+                              }`}
+                            />
                             {s.time}
                           </span>
-                          <span className={`text-xs ${isSelected ? "text-blue-100" : "text-blue-600"}`}>запази</span>
+                          <span
+                            className={`text-xs ${
+                              selected ? "text-blue-100" : "text-blue-600"
+                            }`}
+                          >
+                            запази
+                          </span>
                         </button>
                       );
                     })}
@@ -306,8 +331,8 @@ export default function BookingApp() {
           </div>
         </div>
 
-        {/* ПАНЕЛ – ФОРМА (само в step==="form") */}
-        {step === "form" && selectedTime && (
+        {/* ФОРМА – само ако има избран час */}
+        {selectedTime && (
           <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
@@ -382,7 +407,9 @@ export default function BookingApp() {
 
               {/* Симптоми */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Опишете симптомите си</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Опишете симптомите си
+                </label>
                 <textarea
                   className="w-full min-h-[140px] rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Опишете болката, местоположение/разпространение, от кога, кое усилва/облекчава, предишни травми/изследвания, цел…"
@@ -391,18 +418,18 @@ export default function BookingApp() {
                 />
               </div>
 
+              {/* Съобщения */}
               {error && <div className="text-sm text-red-600">{error}</div>}
 
-              {/* Бутони: Запази + Отказ */}
+              {/* Бутони */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <button
                   type="button"
-                  onClick={handleCancel}
+                  onClick={() => window.history.back()}
                   className="h-12 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
                 >
                   Отказ
                 </button>
-
                 <button
                   type="submit"
                   disabled={loading}
