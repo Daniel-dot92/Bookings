@@ -201,7 +201,7 @@ export default function BookingApp() {
           <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="p-4 flex-1">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
-                Запази час сега
+                Запазете час като изберете дата
               </h2>
 
               <Calendar value={date} onChange={setDate} />
