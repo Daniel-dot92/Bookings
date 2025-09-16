@@ -317,7 +317,7 @@ export default function BookingApp() {
           </div>
         </div>
 
-       {/* ФОРМА */}
+        {/* ПАНЕЛ – ФОРМА под двата панела (показва се когато има избран час) */}
         {selectedTime && (
           <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200">
@@ -330,6 +330,7 @@ export default function BookingApp() {
             </div>
 
             <form onSubmit={submit} className="p-6 space-y-4">
+              {/* ред 1: Име / Фамилия */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Име</label>
@@ -353,6 +354,7 @@ export default function BookingApp() {
                 </div>
               </div>
 
+              {/* ред 2: Телефон / Процедура */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Телефон</label>
@@ -376,6 +378,7 @@ export default function BookingApp() {
                 </div>
               </div>
 
+              {/* ред 3: Имейл */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Имейл</label>
                 <input
@@ -388,8 +391,11 @@ export default function BookingApp() {
                 />
               </div>
 
+              {/* Симптоми */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Опишете симптомите си</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Опишете симптомите си
+                </label>
                 <textarea
                   className="w-full min-h-[140px] rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Опишете болката, местоположение/разпространение, от кога, кое усилва/облекчава, предишни травми/изследвания, цел…"
@@ -398,8 +404,10 @@ export default function BookingApp() {
                 />
               </div>
 
+              {/* Съобщения */}
               {error && <div className="text-sm text-red-600">{error}</div>}
 
+              {/* Бутони */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <button
                   type="button"
