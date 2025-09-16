@@ -29,7 +29,10 @@ function getServiceAccountAuth() {
   return new google.auth.JWT({
     email: creds.client_email,
     key: creds.private_key,
-    scopes: ["https://www.googleapis.com/auth/calendar"],
+    scopes: [
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/spreadsheets",
+    ],
   });
 }
 
@@ -40,4 +43,13 @@ export function getCalendar() {
   const useSA = String(process.env.USE_SERVICE_ACCOUNT).toLowerCase() === "true";
   const auth = useSA ? getServiceAccountAuth() : getOAuth2Client();
   return google.calendar({ version: "v3", auth });
+}
+
+/**
+ * Връща Sheets API клиент
+ */
+export function getSheets() {
+  const useSA = String(process.env.USE_SERVICE_ACCOUNT).toLowerCase() === "true";
+  const auth = useSA ? getServiceAccountAuth() : getOAuth2Client();
+  return google.sheets({ version: "v4", auth });
 }

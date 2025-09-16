@@ -1,6 +1,6 @@
 // app/api/book/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getCalendar } from "@/app/lib/google";
+import { getCalendar, getSheets } from "@/app/lib/google";
 import { parseZoned } from "@/app/lib/datetime";
 
 export const runtime = "nodejs";          // важнo за Vercel (НЕ Edge)
@@ -40,7 +40,6 @@ async function readBody(req: NextRequest): Promise<Payload> {
 
 export async function POST(req: NextRequest) {
   try {
-    // Проверка на env в продъкшън
     const calId = process.env.BOOKING_CALENDAR_ID;
     const useSA = String(process.env.USE_SERVICE_ACCOUNT).toLowerCase() === "true";
     if (!calId) {
@@ -131,6 +130,7 @@ export async function POST(req: NextRequest) {
 Симптоми: ${symptoms || "—"}
 Източник: Уебсайт`;
 
+    // 1) Създаваме събитието в календара
     const resIns = await cal.events.insert({
       calendarId: calId,
       requestBody: {
@@ -144,8 +144,43 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // JSON отговор (front-ът очаква JSON)
-    return NextResponse.json({ ok: true, eventId: resIns.data.id });
+    const eventId = resIns.data.id || "";
+
+    // 2) Добавяме ред в Google Sheets
+    const sheets = getSheets();
+    const spreadsheetId = process.env.SHEETS_SPREADSHEET_ID!;
+    const sheetName = process.env.SHEETS_TAB_NAME || "Bookings";
+
+    const now = new Date();
+    const timestamp = new Intl.DateTimeFormat("bg-BG", {
+      dateStyle: "short",
+      timeStyle: "medium",
+      timeZone: "Europe/Sofia",
+    }).format(now);
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${sheetName}!A:Z`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[
+          timestamp,
+          date,
+          time,
+          dur,
+          firstName,
+          lastName,
+          email,
+          phone,
+          procedure,
+          symptoms || "",
+          eventId,
+          "website",
+        ]],
+      },
+    });
+
+    return NextResponse.json({ ok: true, eventId });
   } catch (e) {
     console.error("BOOK ERROR:", e);
     const message = e instanceof Error ? e.message : "Грешка при записването.";
