@@ -1,14 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./styles/top-bar.css";
 import Script from "next/script";
-<link
-  rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
-  integrity="sha512-y1Z..."
-  crossOrigin="anonymous"
-  referrerPolicy="no-referrer"
-/>
+import Image from "next/image";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,25 +22,25 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="bg">
-      <head>
-        {/* Вкарваме твоя CSS от public/ */}
-        <link rel="stylesheet" href="/top-bar.css" />
-      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* Твоят Top Bar HTML (преименуван към JSX: class -> className) */}
+        {/* Топ бар (HTML + твоя JS/CSS) */}
         <div className="top-bar">
           <div className="top-bar-content">
             <a href="https://dmphysi0.com" aria-label="Начало" className="flex items-center gap-2">
-              <img src="/logo.png" alt="ДМ Физио Лого" className="main-logo" />
+              <Image
+                src="/logo.png"
+                alt="ДМ Физио Лого"
+                width={50}
+                height={50}
+                className="main-logo"
+                priority
+              />
             </a>
 
             <button className="hamburger-menu-toggle" aria-label="Toggle navigation">
-              {/* вместо FontAwesome икона – прост символ; ако държиш FA, добави CDN линк в <head> */}
               <span style={{ fontSize: 28, lineHeight: 1 }}>☰</span>
             </button>
 
@@ -75,7 +70,7 @@ export default function RootLayout({
 
         {children}
 
-        {/* Вкарваме твоя JS от public/ */}
+        {/* Твоят legacy JS от public/ */}
         <Script src="/topbar.js" strategy="afterInteractive" />
       </body>
     </html>
