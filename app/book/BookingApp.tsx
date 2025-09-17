@@ -95,15 +95,11 @@ export default function BookingApp() {
       if (duration === 60) {
         const anyHour = list.some((s) => s.available);
         setHourAvailable(anyHour);
-        if (!anyHour) {
-          setNote("Няма свободен 60-мин интервал за тази дата.");
-        }
+        if (!anyHour) setNote("Няма свободен 60-мин интервал за тази дата.");
       } else if (duration === 90) {
         const any90 = list.some((s) => s.available);
         setNinetyAvailable(any90);
-        if (!any90) {
-          setNote("Няма свободен 90-мин интервал за тази дата.");
-        }
+        if (!any90) setNote("Няма свободен 90-мин интервал за тази дата.");
       } else {
         // за 30 мин – позволяваме натискане на 60/90 по подразбиране
         setHourAvailable(true);
@@ -156,7 +152,15 @@ export default function BookingApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+
+      // по-защитено парсване
+      const ct = res.headers.get("content-type") || "";
+      let data: any = null;
+      if (ct.includes("application/json")) data = await res.json();
+      else {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
+      }
 
       if (!res.ok || !data?.ok) throw new Error(data?.error || "Грешка при запис.");
 
@@ -194,13 +198,12 @@ export default function BookingApp() {
               <div className="text-emerald-900">{successText}</div>
 
               <div className="mt-6 flex gap-3">
-               <Link
-  href="https://dmphysi0.com"
-  className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
->
-  Назад към сайта
-</Link>
-
+                <Link
+                  href="https://dmphysi0.com"
+                  className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
+                >
+                  Назад към сайта
+                </Link>
               </div>
             </div>
           </div>
@@ -219,22 +222,20 @@ export default function BookingApp() {
           <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="p-4 flex-1">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
- <div className="p-4 flex-1">
-  <h2 className="text-center text-[22px] font-semibold text-slate-900">
-    Запазете час като изберете дата и час
-  </h2>
+                Запазете час като изберете дата и час
+              </h2>
 
-  <Calendar value={date} onChange={setDate} />
+              <Calendar value={date} onChange={setDate} />
 
-  <div
-    className="mt-4 flex items-center gap-2 text-xs text-slate-600"
-    suppressHydrationWarning
-  >
-    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-    <span>{mounted ? clientTz : ""}</span>
-  </div>
-</div>
-
+              <div
+                className="mt-4 flex items-center gap-2 text-xs text-slate-600"
+                suppressHydrationWarning
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span>{mounted ? clientTz : ""}</span>
+              </div>
+            </div>
+          </div>
 
           {/* ЧАСОВЕ – тесен панел, залепен вдясно */}
           <div className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
@@ -250,8 +251,9 @@ export default function BookingApp() {
                 <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 shadow-sm">
                   <button
                     onClick={() => setDurationSafe(30)}
-                    className={`px-3 h-8 rounded-full text-xs font-medium transition
-                      ${duration === 30 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}`}
+                    className={`px-3 h-8 rounded-full text-xs font-medium transition ${
+                      duration === 30 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
+                    }`}
                     aria-pressed={duration === 30}
                   >
                     30 мин
@@ -260,9 +262,9 @@ export default function BookingApp() {
                   <button
                     onClick={() => hourAvailable && setDurationSafe(60)}
                     disabled={!hourAvailable}
-                    className={`px-3 h-8 rounded-full text-xs font-medium transition
-                      ${duration === 60 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}
-                      ${!hourAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
+                    className={`px-3 h-8 rounded-full text-xs font-medium transition ${
+                      duration === 60 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
+                    } ${!hourAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     title={!hourAvailable ? "Няма свободен 60-мин интервал за тази дата" : ""}
                     aria-pressed={duration === 60}
                   >
@@ -272,9 +274,9 @@ export default function BookingApp() {
                   <button
                     onClick={() => ninetyAvailable && setDurationSafe(90)}
                     disabled={!ninetyAvailable}
-                    className={`px-3 h-8 rounded-full text-xs font-medium transition
-                      ${duration === 90 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}
-                      ${!ninetyAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
+                    className={`px-3 h-8 rounded-full text-xs font-medium transition ${
+                      duration === 90 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
+                    } ${!ninetyAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     title={!ninetyAvailable ? "Няма свободен 90-мин интервал за тази дата" : ""}
                     aria-pressed={duration === 90}
                   >
@@ -389,7 +391,7 @@ export default function BookingApp() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Телефон</label>
+                  <label className="block text_sm font-medium text-slate-700 mb-1">Телефон</label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0888 123 456"
@@ -399,7 +401,7 @@ export default function BookingApp() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Процедура</label>
+                  <label className="block text_sm font-medium text-slate-700 mb-1">Процедура</label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Процедура / услуга"
