@@ -92,12 +92,15 @@ export default function Calendar({ value, onChange }: Props) {
 
       for (let i = 0; i < 7; i++) {
         const clone = day;
-        const out = !isSameMonth(clone, monthStart);
+       const out = !isSameMonth(clone, monthStart);
 
-        // ↓ неразрешени за избор: преди утре или след +21 дни
-        const tooEarly = clone < minDate;
-        const tooLate = clone > maxDate;
-        const disabled = out || tooEarly || tooLate;
+// ↓ неразрешени: преди утре, след +21 дни и НЕДЕЛЯ
+const tooEarly = clone < minDate;
+const tooLate = clone > maxDate;
+const isSunday = clone.getDay() === 0; // 0 = неделя
+
+const disabled = out || tooEarly || tooLate || isSunday;
+
 
         const selected = isSameDay(clone, value);
 

@@ -24,7 +24,6 @@ function tomorrow() {
   return d;
 }
 
-
 function ymd(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -34,8 +33,8 @@ function ymd(d: Date) {
 
 export default function BookingApp() {
   // базови състояния
- const [date, setDate] = React.useState(tomorrow());
-  const [duration, setDuration] = React.useState<30 | 60>(30);
+  const [date, setDate] = React.useState(tomorrow());
+  const [duration, setDuration] = React.useState<30 | 60 | 90>(30);
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
 
@@ -45,8 +44,9 @@ export default function BookingApp() {
   // успех – показваме отделен екран и скриваме UI
   const [successText, setSuccessText] = React.useState<string | null>(null);
 
-  // за логиката с 60 мин. и бележки
+  // за логиката с 60/90 мин. и бележки
   const [hourAvailable, setHourAvailable] = React.useState(true);
+  const [ninetyAvailable, setNinetyAvailable] = React.useState(true);
   const [note, setNote] = React.useState<string | null>(null);
 
   // форма
@@ -62,14 +62,21 @@ export default function BookingApp() {
   // контейнерът със скрол за часовете
   const listRef = React.useRef<HTMLDivElement>(null);
 
-  // ---- поправка за hydration (timezone) ----
+  // поправка за hydration (timezone)
   const [mounted, setMounted] = React.useState(false);
   const [clientTz, setClientTz] = React.useState<string>("");
   React.useEffect(() => {
     setMounted(true);
     setClientTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
-  // -----------------------------------------
+
+  // удобна смяна на продължителността (чисти избрания час/съобщения)
+  const setDurationSafe = (d: 30 | 60 | 90) => {
+    setSelectedTime(null);
+    setError(null);
+    setNote(null);
+    setDuration(d);
+  };
 
   // зареждане на слотове
   const load = React.useCallback(async () => {
@@ -84,18 +91,23 @@ export default function BookingApp() {
       const json = (await res.json()) as { slots?: Slot[] };
       const list = Array.isArray(json.slots) ? json.slots : [];
 
+      // Проверки за 60 и 90 минути – без автоматичен fallback към 30
       if (duration === 60) {
         const anyHour = list.some((s) => s.available);
+        setHourAvailable(anyHour);
         if (!anyHour) {
-          setHourAvailable(false);
-          setNote("Няма свободен цял час за тази дата. Показваме опции по 30 мин.");
-          setDuration(30);
-          setSlots([]);
-          return;
+          setNote("Няма свободен 60-мин интервал за тази дата.");
         }
-        setHourAvailable(true);
+      } else if (duration === 90) {
+        const any90 = list.some((s) => s.available);
+        setNinetyAvailable(any90);
+        if (!any90) {
+          setNote("Няма свободен 90-мин интервал за тази дата.");
+        }
       } else {
+        // за 30 мин – позволяваме натискане на 60/90 по подразбиране
         setHourAvailable(true);
+        setNinetyAvailable(true);
       }
 
       setSlots(list);
@@ -115,6 +127,12 @@ export default function BookingApp() {
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [date, duration]);
+
+  // При смяна на дата – чистим избрания час и бележката
+  React.useEffect(() => {
+    setSelectedTime(null);
+    setNote(null);
+  }, [date]);
 
   // submit
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -176,13 +194,13 @@ export default function BookingApp() {
               <div className="text-emerald-900">{successText}</div>
 
               <div className="mt-6 flex gap-3">
-                <Link
-                  href="/"
-                  className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
-                >
-                  Назад към сайта
-                </Link>
-               
+               <Link
+  href="https://dmphysi0.com"
+  className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
+>
+  Назад към сайта
+</Link>
+
               </div>
             </div>
           </div>
@@ -201,7 +219,11 @@ export default function BookingApp() {
           <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="p-4 flex-1">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
+<<<<<<< HEAD
                 Запазете час като изберете дата
+=======
+                Запазете час като изберете дата и час
+>>>>>>> 2ae18d2 (Fix availability 90min, /api/book JSON, UI buttons 30/60/90, link to dmphysi0.com)
               </h2>
 
               <Calendar value={date} onChange={setDate} />
@@ -225,31 +247,44 @@ export default function BookingApp() {
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   Налични часове
                 </div>
-                <div className="flex gap-1">
+
+                {/* Segmented control 30/60/90 */}
+                <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 shadow-sm">
                   <button
-                    onClick={() => setDuration(30)}
-                    className={`h-7 px-3 rounded-full border text-xs ${
-                      duration === 30
-                        ? "bg-blue-600 border-blue-600 text-white"
-                        : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
-                    }`}
+                    onClick={() => setDurationSafe(30)}
+                    className={`px-3 h-8 rounded-full text-xs font-medium transition
+                      ${duration === 30 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}`}
+                    aria-pressed={duration === 30}
                   >
                     30 мин
                   </button>
+
                   <button
-                    onClick={() => hourAvailable && setDuration(60)}
+                    onClick={() => hourAvailable && setDurationSafe(60)}
                     disabled={!hourAvailable}
-                    className={`h-7 px-3 rounded-full border text-xs ${
-                      duration === 60
-                        ? "bg-blue-600 border-blue-600 text-white"
-                        : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
-                    } ${!hourAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
+                    className={`px-3 h-8 rounded-full text-xs font-medium transition
+                      ${duration === 60 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}
+                      ${!hourAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     title={!hourAvailable ? "Няма свободен 60-мин интервал за тази дата" : ""}
+                    aria-pressed={duration === 60}
                   >
                     60 мин
                   </button>
+
+                  <button
+                    onClick={() => ninetyAvailable && setDurationSafe(90)}
+                    disabled={!ninetyAvailable}
+                    className={`px-3 h-8 rounded-full text-xs font-medium transition
+                      ${duration === 90 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}
+                      ${!ninetyAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
+                    title={!ninetyAvailable ? "Няма свободен 90-мин интервал за тази дата" : ""}
+                    aria-pressed={duration === 90}
+                  >
+                    90 мин
+                  </button>
                 </div>
               </div>
+
               {note && <div className="mt-2 text-xs text-slate-500">{note}</div>}
             </div>
 
@@ -304,9 +339,7 @@ export default function BookingApp() {
                             {s.time}
                           </span>
                           <span
-                            className={`text-xs ${
-                              selected ? "text-blue-100" : "text-blue-600"
-                            }`}
+                            className={`text-xs ${selected ? "text-blue-100" : "text-blue-600"}`}
                           >
                             запази
                           </span>
@@ -320,7 +353,7 @@ export default function BookingApp() {
           </div>
         </div>
 
-       {/* ФОРМА */}
+        {/* ФОРМА */}
         {selectedTime && (
           <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200">
