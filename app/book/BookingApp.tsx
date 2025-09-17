@@ -15,6 +15,13 @@ type FormData = {
   procedure: string;
   symptoms?: string;
 };
+type BookAPIResponse = {
+  ok?: boolean;
+  error?: string;
+  eventId?: string;
+  sheetsOk?: boolean;
+  sheetsErr?: string;
+};
 
 // + добави най-отгоре до ymd():
 function tomorrow() {
@@ -153,16 +160,21 @@ export default function BookingApp() {
         body: JSON.stringify(body),
       });
 
-      // по-защитено парсване
-      const ct = res.headers.get("content-type") || "";
-      let data: any = null;
-      if (ct.includes("application/json")) data = await res.json();
-      else {
-        const text = await res.text();
-        throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
-      }
+     // по-защитено парсване
+const ct = res.headers.get("content-type") || "";
+let data: BookAPIResponse | null = null;
 
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "Грешка при запис.");
+if (ct.includes("application/json")) {
+  data = (await res.json()) as BookAPIResponse;
+} else {
+  const text = await res.text();
+  throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
+}
+
+if (!res.ok || !data?.ok) {
+  throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
+}
+
 
       // успех – показваме само потвърждението (скриваме календара/часовете)
       const [h, m] = selectedTime.split(":").map((n) => Number(n));
