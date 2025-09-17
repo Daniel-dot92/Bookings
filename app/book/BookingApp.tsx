@@ -5,6 +5,8 @@ import Link from "next/link";
 import Calendar from "@/app/components/Calendar";
 import { fmtDateHeader } from "@/app/lib/ui";
 
+import TopBar from "@/app/components/TopBar";
+
 type Slot = { time: string; available: boolean };
 
 type FormData = {

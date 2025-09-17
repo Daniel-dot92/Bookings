@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Script from "next/script";
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+  integrity="sha512-y1Z..."
+  crossOrigin="anonymous"
+  referrerPolicy="no-referrer"
+/>
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,11 +31,52 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="bg">
+      <head>
+        {/* Вкарваме твоя CSS от public/ */}
+        <link rel="stylesheet" href="/top-bar.css" />
+      </head>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {/* Твоят Top Bar HTML (преименуван към JSX: class -> className) */}
+        <div className="top-bar">
+          <div className="top-bar-content">
+            <a href="https://dmphysi0.com" aria-label="Начало" className="flex items-center gap-2">
+              <img src="/logo.png" alt="ДМ Физио Лого" className="main-logo" />
+            </a>
+
+            <button className="hamburger-menu-toggle" aria-label="Toggle navigation">
+              {/* вместо FontAwesome икона – прост символ; ако държиш FA, добави CDN линк в <head> */}
+              <span style={{ fontSize: 28, lineHeight: 1 }}>☰</span>
+            </button>
+
+            <nav className="main-nav">
+              <ul>
+                <li><a href="https://dmphysi0.com">Начало</a></li>
+
+                <li className="dropdown">
+                  <a href="https://dmphysi0.com/services.html" className="dropbtn">Процедури и Цени</a>
+                  <div className="dropdown-content">
+                    <a href="https://dmphysi0.com/kinesitherapy.html">Кинезитерапия</a>
+                    <a href="https://dmphysi0.com/massages.html">Масажи</a>
+                    <a href="https://dmphysi0.com/online-recovery.html">Онлайн Процедури</a>
+                  </div>
+                </li>
+
+                <li><a href="https://dmphysi0.com/pain-conditions.html">Болкови състояния</a></li>
+                <li><a href="https://dmphysi0.com/shop.html">Онлайн Магазин</a></li>
+                <li><a href="https://dmphysi0.com/contact.html">Контакти</a></li>
+              </ul>
+            </nav>
+          </div>
+        </div>
+
+        {/* Отместване надолу, защото топ барът е fixed */}
+        <div style={{ height: 64 }} />
+
         {children}
+
+        {/* Вкарваме твоя JS от public/ */}
+        <Script src="/topbar.js" strategy="afterInteractive" />
       </body>
     </html>
   );
