@@ -219,24 +219,22 @@ export default function BookingApp() {
           <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="p-4 flex-1">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
-<<<<<<< HEAD
-                Запазете час като изберете дата
-=======
-                Запазете час като изберете дата и час
->>>>>>> 2ae18d2 (Fix availability 90min, /api/book JSON, UI buttons 30/60/90, link to dmphysi0.com)
-              </h2>
+ <div className="p-4 flex-1">
+  <h2 className="text-center text-[22px] font-semibold text-slate-900">
+    Запазете час като изберете дата и час
+  </h2>
 
-              <Calendar value={date} onChange={setDate} />
+  <Calendar value={date} onChange={setDate} />
 
-              <div
-                className="mt-4 flex items-center gap-2 text-xs text-slate-600"
-                suppressHydrationWarning
-              >
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <span>{mounted ? clientTz : ""}</span>
-              </div>
-            </div>
-          </div>
+  <div
+    className="mt-4 flex items-center gap-2 text-xs text-slate-600"
+    suppressHydrationWarning
+  >
+    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+    <span>{mounted ? clientTz : ""}</span>
+  </div>
+</div>
+
 
           {/* ЧАСОВЕ – тесен панел, залепен вдясно */}
           <div className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
