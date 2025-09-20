@@ -1,72 +1,112 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- JavaScript за Top Bar прозрачност при скрол ---
-    const topBar = document.querySelector('.top-bar');
-    const scrollThreshold = 50; 
+  'use strict';
 
-    function adjustTopBarOpacity() {
-        if (topBar) {
-            const scrolled = window.scrollY;
-            if (scrolled > scrollThreshold) {
-                const opacity = Math.max(0.7, 1 - (scrolled - scrollThreshold) / 200);
-                topBar.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`; // Използваме '0,0,0' за черен, или променете на RGB на вашия тюркоаз
-            } else {
-                topBar.style.backgroundColor = 'rgba(0, 0, 0, 1)'; // Пълен цвят #000000ff
-            }
-        }
+  const MOBILE_MAX = 768;
+  const isMobile = () => window.innerWidth <= MOBILE_MAX;
+
+  /* ---------- SELECTORS ---------- */
+  const header   = document.querySelector('.tb-header');
+  const burger   = document.querySelector('.tb-burger');
+  const nav      = document.querySelector('.tb-nav');
+  const dropToggles = document.querySelectorAll('.tb-drop-toggle');
+
+  /* ---------- SCROLL BEHAVIOR ----------
+     - при y > 0 -> става прозрачна (rgba 0.4)
+     - при y === 0 -> обратно плътна
+  -------------------------------------- */
+  function applyHeaderBg(){
+    if (!header) return;
+    const y = window.scrollY || 0;
+    if (y > 0) {
+      header.classList.add('tb--transparent');
+    } else {
+      header.classList.remove('tb--transparent');
     }
+  }
 
-    window.addEventListener('scroll', adjustTopBarOpacity);
-    adjustTopBarOpacity(); // Изпълняваме веднъж при зареждане
-
-    // --- JavaScript за Хамбургер меню и Dropdown навигация ---
-    const hamburgerToggle = document.querySelector('.hamburger-menu-toggle');
-    const mainNav = document.querySelector('.main-nav');
-    const dropdownToggles = document.querySelectorAll('.main-nav .dropbtn');
-
-    if (hamburgerToggle && mainNav) {
-        hamburgerToggle.addEventListener('click', function() {
-            mainNav.classList.toggle('active');
-            document.body.classList.toggle('no-scroll'); 
-        });
+  // init + on scroll (с rAF)
+  let ticking = false;
+  function onScroll(){
+    if (!ticking){
+      window.requestAnimationFrame(() => {
+        applyHeaderBg();
+        ticking = false;
+      });
+      ticking = true;
     }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  applyHeaderBg();
 
-    // Затваряне на менюто при клик върху връзка (освен dropdown бутоните)
-    mainNav.querySelectorAll('a:not(.dropbtn)').forEach(link => {
-        link.addEventListener('click', () => {
-            // Затваряме менюто само ако е мобилно (т.е. mainNav е активно)
-            if (mainNav.classList.contains('active') && window.innerWidth <= 768) { 
-                mainNav.classList.remove('active');
-                document.body.classList.remove('no-scroll');
-                // Затваряме и всички отворени dropdown-и
-                dropdownToggles.forEach(toggle => {
-                    const dropdownContent = toggle.nextElementSibling;
-                    if (dropdownContent && dropdownContent.classList.contains('dropdown-content')) {
-                        dropdownContent.classList.remove('active');
-                    }
-                });
-            }
-        });
-    });
+  /* ---------- MOBILE: burger toggle ---------- */
+  function closeMobileMenu(){
+    nav?.classList.remove('tb-nav--open');
+    document.body.classList.remove('tb-no-scroll');
+    // затваряме и всички отворени dropdown-и
+    document.querySelectorAll('.tb-dropdown.tb-open').forEach(li => li.classList.remove('tb-open'));
+    burger?.setAttribute('aria-expanded', 'false');
+  }
+  function toggleMobileMenu(){
+    if (!nav) return;
+    const open = nav.classList.toggle('tb-nav--open');
+    document.body.classList.toggle('tb-no-scroll', open);
+    burger?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  burger?.addEventListener('click', () => {
+    if (!isMobile()) return;
+    toggleMobileMenu();
+  });
 
-    // JavaScript за показване/скриване на dropdown съдържанието при клик на мобилен
-    dropdownToggles.forEach(toggle => {
-        toggle.addEventListener('click', function(e) {
-            if (window.innerWidth <= 768) { // Прилагаме само на мобилни
-                e.preventDefault(); // Предотвратява навигацията към services.html
-                const dropdownContent = this.nextElementSibling;
-                if (dropdownContent && dropdownContent.classList.contains('dropdown-content')) {
-                    // Затваряме всички други отворени dropdown-и, преди да отворим текущия
-                    dropdownToggles.forEach(otherToggle => {
-                        if (otherToggle !== toggle) {
-                            const otherDropdownContent = otherToggle.nextElementSibling;
-                            if (otherDropdownContent && otherDropdownContent.classList.contains('dropdown-content')) {
-                                otherDropdownContent.classList.remove('active');
-                            }
-                        }
-                    });
-                    dropdownContent.classList.toggle('active'); // Добавя/премахва клас 'active'
-                }
-            }
-        });
+  // затваряне при клик извън
+  document.addEventListener('click', (e) => {
+    if (!isMobile() || !nav) return;
+    const target = e.target;
+    const inside = nav.contains(target) || burger.contains(target);
+    if (!inside && nav.classList.contains('tb-nav--open')) {
+      closeMobileMenu();
+    }
+  });
+
+  // ESC затваря
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isMobile() && nav?.classList.contains('tb-nav--open')) {
+      closeMobileMenu();
+    }
+  });
+
+  // при resize към десктоп чистим мобилното състояние
+  window.addEventListener('resize', () => {
+    if (!isMobile()) closeMobileMenu();
+  });
+
+  /* ---------- MOBILE: dropdown toggle ---------- */
+/* На мобилно НЕ искаме акордеон. Позволяваме линкът да навигира. */
+if (dropToggles.length){
+  dropToggles.forEach(a => {
+    a.addEventListener('click', (e) => {
+      // ако е мобилно: не правим нищо (НЕ preventDefault), позволяваме следване на href
+      if (isMobile()) return;
+
+      // на десктоп остава поведение тип hover/click ако го искаш
+      if (a.dataset.dropdown === 'toggle'){
+        // по желание можеш да оставиш този блок за десктоп-клик
+        // e.preventDefault();
+        const li = a.closest('.tb-dropdown');
+        if (!li) return;
+        document.querySelectorAll('.tb-dropdown.tb-open').forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+        li.classList.toggle('tb-open');
+      }
     });
+  });
+}
+
+
+  /* ---------- CLICK по линк: на мобилно затваря менюто ---------- */
+  nav?.querySelectorAll('.tb-link, .tb-drop-link').forEach(link => {
+    link.addEventListener('click', () => {
+      if (isMobile() && nav.classList.contains('tb-nav--open')) {
+        closeMobileMenu();
+      }
+    });
+  });
 });
