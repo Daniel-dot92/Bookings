@@ -15,6 +15,7 @@ type FormData = {
   procedure: string;
   symptoms?: string;
 };
+
 type BookAPIResponse = {
   ok?: boolean;
   error?: string;
@@ -41,7 +42,7 @@ function ymd(d: Date) {
 export default function BookingApp() {
   // базови състояния
   const [date, setDate] = React.useState(tomorrow());
-  const [duration, setDuration] = React.useState<30 | 60 | 90>(30);
+  const [duration, setDuration] = React.useState<30 | 60 | 90>(60); // 60 по подразбиране
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
 
@@ -68,6 +69,10 @@ export default function BookingApp() {
 
   // контейнерът със скрол за часовете
   const listRef = React.useRef<HTMLDivElement>(null);
+
+  // рефове за автоскрол към формата и фокус
+  const formRef = React.useRef<HTMLDivElement>(null);
+  const firstFieldRef = React.useRef<HTMLInputElement>(null);
 
   // поправка за hydration (timezone)
   const [mounted, setMounted] = React.useState(false);
@@ -137,6 +142,30 @@ export default function BookingApp() {
     setNote(null);
   }, [date]);
 
+  // Автоскрол към формата след избор на час
+  React.useEffect(() => {
+    if (!selectedTime) return;
+
+    const raf = requestAnimationFrame(() => {
+      const el = formRef.current;
+      if (!el) return;
+
+      // височина на фиксирания топ бар от CSS променливата (fallback 64)
+      const root = getComputedStyle(document.documentElement);
+      const tbRaw = root.getPropertyValue("--tb-h") || "64px";
+      const tbH = parseInt(tbRaw) || 64;
+      const extra = 12; // малък отстъп
+
+      const y = el.getBoundingClientRect().top + window.scrollY - (tbH + extra);
+      window.scrollTo({ top: y, behavior: "smooth" });
+
+      // фокус в първото поле, без да премества скрол
+      firstFieldRef.current?.focus({ preventScroll: true });
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [selectedTime]);
+
   // submit
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -160,21 +189,20 @@ export default function BookingApp() {
         body: JSON.stringify(body),
       });
 
-     // по-защитено парсване
-const ct = res.headers.get("content-type") || "";
-let data: BookAPIResponse | null = null;
+      // по-защитено парсване
+      const ct = res.headers.get("content-type") || "";
+      let data: BookAPIResponse | null = null;
 
-if (ct.includes("application/json")) {
-  data = (await res.json()) as BookAPIResponse;
-} else {
-  const text = await res.text();
-  throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
-}
+      if (ct.includes("application/json")) {
+        data = (await res.json()) as BookAPIResponse;
+      } else {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
+      }
 
-if (!res.ok || !data?.ok) {
-  throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
-}
-
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
+      }
 
       // успех – показваме само потвърждението (скриваме календара/часовете)
       const [h, m] = selectedTime.split(":").map((n) => Number(n));
@@ -367,7 +395,10 @@ if (!res.ok || !data?.ok) {
 
         {/* ФОРМА */}
         {selectedTime && (
-          <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div
+            ref={formRef}
+            className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"
+          >
             <div className="px-6 py-4 border-b border-slate-200">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
                 Попълнете формата, за да запазите час
@@ -382,6 +413,7 @@ if (!res.ok || !data?.ok) {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Име</label>
                   <input
+                    ref={firstFieldRef}
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Вашето име"
                     required
@@ -403,7 +435,7 @@ if (!res.ok || !data?.ok) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text_sm font-medium text-slate-700 mb-1">Телефон</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Телефон</label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0888 123 456"
@@ -413,7 +445,7 @@ if (!res.ok || !data?.ok) {
                   />
                 </div>
                 <div>
-                  <label className="block text_sm font-medium text-slate-700 mb-1">Процедура</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Процедура</label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Процедура / услуга"
@@ -428,7 +460,7 @@ if (!res.ok || !data?.ok) {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Имейл</label>
                 <input
                   type="email"
-                  className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-sлеate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="your@email.com"
                   required
                   value={form.email}
