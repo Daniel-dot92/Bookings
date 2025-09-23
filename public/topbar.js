@@ -1,3 +1,4 @@
+// /public/topbar.js
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
 
@@ -10,28 +11,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const nav      = document.querySelector('.tb-nav');
   const dropToggles = document.querySelectorAll('.tb-drop-toggle');
 
-  /* ---------- SCROLL BEHAVIOR ----------
-     - при y > 0 -> става прозрачна (rgba 0.4)
-     - при y === 0 -> обратно плътна
-  -------------------------------------- */
+  /* ---------- SCROLL BEHAVIOR ---------- */
   function applyHeaderBg(){
     if (!header) return;
     const y = window.scrollY || 0;
-    if (y > 0) {
-      header.classList.add('tb--transparent');
-    } else {
-      header.classList.remove('tb--transparent');
-    }
+    if (y > 0) header.classList.add('tb--transparent');
+    else header.classList.remove('tb--transparent');
   }
-
-  // init + on scroll (с rAF)
   let ticking = false;
   function onScroll(){
     if (!ticking){
-      window.requestAnimationFrame(() => {
-        applyHeaderBg();
-        ticking = false;
-      });
+      window.requestAnimationFrame(() => { applyHeaderBg(); ticking = false; });
       ticking = true;
     }
   }
@@ -43,7 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     nav?.classList.remove('tb-nav--open');
     document.body.classList.remove('tb-no-scroll');
     // затваряме и всички отворени dropdown-и
-    document.querySelectorAll('.tb-dropdown.tb-open').forEach(li => li.classList.remove('tb-open'));
+    document.querySelectorAll('.tb-dropdown.tb-open')
+      .forEach(li => li.classList.remove('tb-open'));
     burger?.setAttribute('aria-expanded', 'false');
   }
   function toggleMobileMenu(){
@@ -79,27 +70,32 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isMobile()) closeMobileMenu();
   });
 
-  /* ---------- MOBILE: dropdown toggle ---------- */
-/* На мобилно НЕ искаме акордеон. Позволяваме линкът да навигира. */
-if (dropToggles.length){
-  dropToggles.forEach(a => {
-    a.addEventListener('click', (e) => {
-      // ако е мобилно: не правим нищо (НЕ preventDefault), позволяваме следване на href
-      if (isMobile()) return;
-
-      // на десктоп остава поведение тип hover/click ако го искаш
-      if (a.dataset.dropdown === 'toggle'){
-        // по желание можеш да оставиш този блок за десктоп-клик
-        // e.preventDefault();
+  /* ---------- DROPDOWN ---------- */
+  // На МОБИЛНО: искаме акордеон (не навигира веднага)
+  // На ДЕСКТОП: можеш да оставиш hover от CSS; JS не е задължителен.
+  if (dropToggles.length){
+    dropToggles.forEach(a => {
+      a.addEventListener('click', (e) => {
         const li = a.closest('.tb-dropdown');
         if (!li) return;
-        document.querySelectorAll('.tb-dropdown.tb-open').forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
-        li.classList.toggle('tb-open');
-      }
-    });
-  });
-}
 
+        if (isMobile()){
+          e.preventDefault();                // спира навигацията
+          // затвори други отворени (по избор)
+          document.querySelectorAll('.tb-dropdown.tb-open')
+            .forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+          li.classList.toggle('tb-open');    // показва/скрива подменюто
+          return;
+        }
+
+        // (по желание) клик на десктоп да отваря/затваря
+        // e.preventDefault();
+        // document.querySelectorAll('.tb-dropdown.tb-open')
+        //   .forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+        // li.classList.toggle('tb-open');
+      });
+    });
+  }
 
   /* ---------- CLICK по линк: на мобилно затваря менюто ---------- */
   nav?.querySelectorAll('.tb-link, .tb-drop-link').forEach(link => {
