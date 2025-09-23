@@ -70,23 +70,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isMobile()) closeMobileMenu();
   });
 
-  /* ---------- DROPDOWN ---------- */
-  // На МОБИЛНО: искаме акордеон (не навигира веднага)
-  // На ДЕСКТОП: можеш да оставиш hover от CSS; JS не е задължителен.
-  if (dropToggles.length){
-    dropToggles.forEach(a => {
-      a.addEventListener('click', (e) => {
-        const li = a.closest('.tb-dropdown');
-        if (!li) return;
+  // ---------- MOBILE: dropdown toggle ----------
+if (dropToggles.length){
+  dropToggles.forEach(a => {
+    a.addEventListener('click', (e) => {
+      const li = a.closest('.tb-dropdown');
+      if (!li) return;
 
-        if (isMobile()){
-          e.preventDefault();                // спира навигацията
-          // затвори други отворени (по избор)
-          document.querySelectorAll('.tb-dropdown.tb-open')
-            .forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
-          li.classList.toggle('tb-open');    // показва/скрива подменюто
-          return;
-        }
+      if (isMobile()){
+        e.preventDefault(); // спира навигацията
+        // (по желание) затвори други отворени
+        document.querySelectorAll('.tb-dropdown.tb-open')
+          .forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+        li.classList.toggle('tb-open'); // показва/скрива подменюто
+        return;
+      }
+
+      // На десктоп може да оставиш hover от CSS
+    });
+  });
+}
+
 
         // (по желание) клик на десктоп да отваря/затваря
         // e.preventDefault();
