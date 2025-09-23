@@ -79,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (isMobile()){
           e.preventDefault(); // спира навигацията на линка
-          // по желание: затвори други отворени
+          // по избор: затвори други отворени
           document.querySelectorAll('.tb-dropdown.tb-open')
             .forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
           li.classList.toggle('tb-open'); // показва/скрива подменюто
