@@ -94,8 +94,6 @@
 }
 .tb-drop-link:hover{ background: rgba(255,255,255,.92); }
 
-
-
 /* =========================
    TB: Mobile menu panel
 ========================= */
@@ -125,8 +123,6 @@
   }
   .tb-link:hover{ background: rgba(255,255,255,.12); transform:none; }
 
-
- 
   .tb-drop-link:hover{ background: rgba(255,255,255,.12); }
 
   /* блокиране на скрол на тялото при отворено меню */
@@ -137,6 +133,7 @@
    TB: Page offset (по избор)
 ========================= */
 .tb-push{ padding-top: calc(var(--tb-h) + 10px); }
+
 /* ===== Dropdown: видимост ===== */
 
 /* Десктоп: показвай при hover (или ако JS сложи .tb-open) */
