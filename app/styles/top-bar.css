@@ -137,3 +137,39 @@
    TB: Page offset (по избор)
 ========================= */
 .tb-push{ padding-top: calc(var(--tb-h) + 10px); }
+/* ===== Dropdown: видимост ===== */
+
+/* Десктоп: показвай при hover (или ако JS сложи .tb-open) */
+@media (min-width: 769px){
+  .tb-dropdown:hover > .tb-drop-menu,
+  .tb-dropdown.tb-open > .tb-drop-menu{
+    display: block;
+  }
+}
+
+/* Мобилно: подменюто е част от панела; показва се при .tb-open */
+@media (max-width: 768px){
+  .tb-drop-menu{
+    display: none;
+    position: static;      /* да влиза в потока на мобилното меню */
+    min-width: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 6px 0;
+  }
+  .tb-dropdown.tb-open > .tb-drop-menu{
+    display: block;
+  }
+  /* по-четими линкове в подменюто */
+  .tb-drop-link{
+    display: block;
+    margin: 6px 12px 0;
+    padding: 10px 12px;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 12px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.10);
+  }
+  .tb-drop-link:hover{ background: rgba(255,255,255,.12); }
+}
