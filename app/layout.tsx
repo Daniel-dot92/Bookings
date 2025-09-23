@@ -5,31 +5,29 @@ import "./styles/top-bar.css";
 import Script from "next/script";
 import Image from "next/image";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+/* Fonts */
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
+/* SEO */
 export const metadata: Metadata = {
   title: "DM PHYSIO",
   description: "DM PHYSIO – онлайн записване на час",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+/* Viewport (важно за мобилните media queries) */
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="bg">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* ===== TOP BAR (TB classes) ===== */}
+        {/* Top Bar */}
         <header className="tb-header">
           <div className="tb-inner">
-            {/* Logo */}
             <a href="https://dmphysi0.com" aria-label="Начало">
               <Image
                 src="/logo.png"
@@ -41,12 +39,10 @@ export default function RootLayout({
               />
             </a>
 
-            {/* Burger (mobile) */}
             <button className="tb-burger" aria-label="Toggle navigation" aria-expanded="false">
               <span style={{ fontSize: 28, lineHeight: 1 }}>☰</span>
             </button>
 
-            {/* Navigation */}
             <nav className="tb-nav" aria-label="Основна навигация">
               <ul className="tb-menu">
                 <li className="tb-item">
@@ -88,7 +84,7 @@ export default function RootLayout({
         {/* Page content */}
         {children}
 
-        {/* JS за топ бара */}
+        {/* Top bar JS (в /public/topbar.js) */}
         <Script src="/topbar.js" strategy="afterInteractive" />
       </body>
     </html>
