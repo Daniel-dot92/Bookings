@@ -1,64 +1,69 @@
 // /public/topbar.js
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
+  console.log('[topbar] loaded');
 
+  /* ---------- CONFIG ---------- */
   const MOBILE_MAX = 768;
   const isMobile = () => window.innerWidth <= MOBILE_MAX;
 
   /* ---------- SELECTORS ---------- */
-  const header   = document.querySelector('.tb-header');
-  const burger   = document.querySelector('.tb-burger');
-  const nav      = document.querySelector('.tb-nav');
+  const header = document.querySelector('.tb-header');
+  const burger = document.querySelector('.tb-burger');
+  const nav    = document.querySelector('.tb-nav');
   const dropToggles = document.querySelectorAll('.tb-drop-toggle');
 
-  /* ---------- SCROLL BEHAVIOR ---------- */
+  /* ---------- SCROLL BG (solid at top, transparent on scroll) ---------- */
   function applyHeaderBg(){
     if (!header) return;
     const y = window.scrollY || 0;
-    if (y > 0) header.classList.add('tb--transparent');
-    else header.classList.remove('tb--transparent');
+    header.classList.toggle('tb--transparent', y > 0);
   }
   let ticking = false;
-  function onScroll(){
+  window.addEventListener('scroll', () => {
     if (!ticking){
-      window.requestAnimationFrame(() => { applyHeaderBg(); ticking = false; });
+      requestAnimationFrame(() => { applyHeaderBg(); ticking = false; });
       ticking = true;
     }
-  }
-  window.addEventListener('scroll', onScroll, { passive: true });
+  }, { passive: true });
   applyHeaderBg();
 
-  /* ---------- MOBILE: burger toggle ---------- */
+  /* ---------- MOBILE MENU TOGGLE ---------- */
+  function setExpanded(el, val){
+    try { el?.setAttribute('aria-expanded', val ? 'true' : 'false'); } catch {}
+  }
   function closeMobileMenu(){
     nav?.classList.remove('tb-nav--open');
     document.body.classList.remove('tb-no-scroll');
+    setExpanded(burger, false);
     // затваряме и всички отворени dropdown-и
     document.querySelectorAll('.tb-dropdown.tb-open')
       .forEach(li => li.classList.remove('tb-open'));
-    burger?.setAttribute('aria-expanded', 'false');
   }
   function toggleMobileMenu(){
     if (!nav) return;
     const open = nav.classList.toggle('tb-nav--open');
     document.body.classList.toggle('tb-no-scroll', open);
-    burger?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    setExpanded(burger, open);
   }
-  burger?.addEventListener('click', () => {
-    if (!isMobile()) return;
+
+  // ВАЖНО: винаги toggle-ва (без if (!isMobile()) return)
+  burger?.addEventListener('click', (e) => {
+    e.preventDefault();
     toggleMobileMenu();
   });
 
-  // затваряне при клик извън
+  // клик извън навигацията затваря (само на мобилно)
   document.addEventListener('click', (e) => {
     if (!isMobile() || !nav) return;
-    const target = e.target;
-    const inside = nav.contains(target) || burger.contains(target);
+    const t = e.target;
+    const inside = nav.contains(t) || burger?.contains(t);
     if (!inside && nav.classList.contains('tb-nav--open')) {
       closeMobileMenu();
     }
   });
 
-  // ESC затваря
+  // ESC затваря (само на мобилно)
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isMobile() && nav?.classList.contains('tb-nav--open')) {
       closeMobileMenu();
@@ -78,11 +83,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!li) return;
 
         if (isMobile()){
-          e.preventDefault(); // спира навигацията на линка
-          // по избор: затвори други отворени
+          // На мобилно: НЕ навигираме; отваряме подменюто
+          e.preventDefault();
+          // (по избор) затваряй други отворени:
           document.querySelectorAll('.tb-dropdown.tb-open')
             .forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
-          li.classList.toggle('tb-open'); // показва/скрива подменюто
+          li.classList.toggle('tb-open');
+          // ако менюто беше затворено (рядко при race), отворѝ го
+          if (!nav.classList.contains('tb-nav--open')) toggleMobileMenu();
           return;
         }
 
@@ -96,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- CLICK по линк: на мобилно затваря менюто ---------- */
+  /* ---------- Клик по линк: на мобилно затваря панела ---------- */
   nav?.querySelectorAll('.tb-link, .tb-drop-link').forEach(link => {
     link.addEventListener('click', () => {
       if (isMobile() && nav.classList.contains('tb-nav--open')) {
