@@ -18,18 +18,11 @@
       if (!header) return;
       header.classList.toggle('tb--transparent', (window.scrollY || 0) > 0);
     }
-    let ticking = false;
-    window.addEventListener('scroll', () => {
-      if (!ticking){
-        requestAnimationFrame(() => { applyHeaderBg(); ticking = false; });
-        ticking = true;
-      }
-    }, { passive: true });
-    applyHeaderBg();
 
-    /* ---------- MOBILE MENU ---------- */
+    // помощник за aria-expanded
     const setExpanded = (el, v) => { try { el?.setAttribute('aria-expanded', v ? 'true' : 'false'); } catch {} };
 
+    // затвори мобилното меню (и изчисти състояния)
     function closeMobileMenu(){
       nav?.classList.remove('tb-nav--open');
       document.body.classList.remove('tb-no-scroll');
@@ -37,9 +30,29 @@
       setExpanded(burger, false);
     }
 
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking){
+        requestAnimationFrame(() => {
+          applyHeaderBg();
+
+          // ✅ ДОПЪЛНЕНИЕ: ако сме в мобилен layout и менюто е отворено – скролът го затваря
+          if (isMobile() && nav?.classList.contains('tb-nav--open')) {
+            closeMobileMenu();
+          }
+
+          ticking = false;
+        });
+        ticking = true;
+      }
+    }, { passive: true });
+    applyHeaderBg();
+
+    /* ---------- MOBILE MENU ---------- */
     function toggleMobileMenu(){
       if (!nav) return;
       const open = nav.classList.toggle('tb-nav--open');
+      // блокираме скрол на страницата само когато е мобилно и менюто е отворено
       document.body.classList.toggle('tb-no-scroll', open && isMobile());
       setExpanded(burger, open);
     }
@@ -57,6 +70,13 @@
       const inside = nav.contains(t) || burger?.contains(t);
       if (!inside && nav.classList.contains('tb-nav--open')) closeMobileMenu();
     });
+
+    // ✅ ДОПЪЛНЕНИЕ: скрол-жестове затварят менюто (wheel / touchmove)
+    const maybeCloseOnScrollGesture = () => {
+      if (isMobile() && nav?.classList.contains('tb-nav--open')) closeMobileMenu();
+    };
+    window.addEventListener('wheel', maybeCloseOnScrollGesture, { passive: true });
+    window.addEventListener('touchmove', maybeCloseOnScrollGesture, { passive: true });
 
     // ESC затваря (мобилен layout)
     document.addEventListener('keydown', (e) => {
