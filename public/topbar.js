@@ -1,72 +1,104 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // --- JavaScript за Top Bar прозрачност при скрол ---
-    const topBar = document.querySelector('.top-bar');
-    const scrollThreshold = 50; 
+// /public/topbar.js
+(function(){
+  'use strict';
 
-    function adjustTopBarOpacity() {
-        if (topBar) {
-            const scrolled = window.scrollY;
-            if (scrolled > scrollThreshold) {
-                const opacity = Math.max(0.7, 1 - (scrolled - scrollThreshold) / 200);
-                topBar.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`; // Използваме '0,0,0' за черен, или променете на RGB на вашия тюркоаз
-            } else {
-                topBar.style.backgroundColor = 'rgba(0, 0, 0, 1)'; // Пълен цвят #000000ff
-            }
+  function init(){
+    // синхрон с CSS @media (max-width: 768px)
+    const mq = window.matchMedia('(max-width: 768px)');
+    const isMobile = () => mq.matches;
+
+    /* ---------- SELECTORS ---------- */
+    const header = document.querySelector('.tb-header');
+    const burger = document.querySelector('.tb-burger');
+    const nav    = document.querySelector('.tb-nav');
+    const dropToggles = document.querySelectorAll('.tb-drop-toggle');
+
+    /* ---------- SCROLL BG ---------- */
+    function applyHeaderBg(){
+      if (!header) return;
+      header.classList.toggle('tb--transparent', (window.scrollY || 0) > 0);
+    }
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking){
+        requestAnimationFrame(() => { applyHeaderBg(); ticking = false; });
+        ticking = true;
+      }
+    }, { passive: true });
+    applyHeaderBg();
+
+    /* ---------- MOBILE MENU ---------- */
+    const setExpanded = (el, v) => { try { el?.setAttribute('aria-expanded', v ? 'true' : 'false'); } catch {} };
+
+    function closeMobileMenu(){
+      nav?.classList.remove('tb-nav--open');
+      document.body.classList.remove('tb-no-scroll');
+      document.querySelectorAll('.tb-dropdown.tb-open').forEach(li => li.classList.remove('tb-open'));
+      setExpanded(burger, false);
+    }
+
+    function toggleMobileMenu(){
+      if (!nav) return;
+      const open = nav.classList.toggle('tb-nav--open');
+      document.body.classList.toggle('tb-no-scroll', open && isMobile());
+      setExpanded(burger, open);
+    }
+
+    // бургерът винаги toggle-ва (без guard по ширина)
+    burger?.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleMobileMenu();
+    });
+
+    // клик извън панела затваря (само в мобилен layout)
+    document.addEventListener('click', (e) => {
+      if (!isMobile() || !nav) return;
+      const t = e.target;
+      const inside = nav.contains(t) || burger?.contains(t);
+      if (!inside && nav.classList.contains('tb-nav--open')) closeMobileMenu();
+    });
+
+    // ESC затваря (мобилен layout)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isMobile() && nav?.classList.contains('tb-nav--open')) {
+        closeMobileMenu();
+      }
+    });
+
+    // при смяна на viewport чистим мобилното състояние
+    const handleViewportChange = () => { if (!isMobile()) closeMobileMenu(); };
+    window.addEventListener('resize', handleViewportChange, { passive: true });
+    mq.addEventListener?.('change', handleViewportChange);
+
+    /* ---------- DROPDOWN ---------- */
+    // на мобилно: линковете навигират; на десктоп: hover (CSS) + optional click-toggle
+    dropToggles.forEach(a => {
+      a.addEventListener('click', (e) => {
+        if (isMobile()) return; // мобилно → следва href
+        if (a.dataset.dropdown === 'toggle'){
+          e.preventDefault();
+          const li = a.closest('.tb-dropdown');
+          if (!li) return;
+          document.querySelectorAll('.tb-dropdown.tb-open').forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+          li.classList.toggle('tb-open');
         }
-    }
-
-    window.addEventListener('scroll', adjustTopBarOpacity);
-    adjustTopBarOpacity(); // Изпълняваме веднъж при зареждане
-
-    // --- JavaScript за Хамбургер меню и Dropdown навигация ---
-    const hamburgerToggle = document.querySelector('.hamburger-menu-toggle');
-    const mainNav = document.querySelector('.main-nav');
-    const dropdownToggles = document.querySelectorAll('.main-nav .dropbtn');
-
-    if (hamburgerToggle && mainNav) {
-        hamburgerToggle.addEventListener('click', function() {
-            mainNav.classList.toggle('active');
-            document.body.classList.toggle('no-scroll'); 
-        });
-    }
-
-    // Затваряне на менюто при клик върху връзка (освен dropdown бутоните)
-    mainNav.querySelectorAll('a:not(.dropbtn)').forEach(link => {
-        link.addEventListener('click', () => {
-            // Затваряме менюто само ако е мобилно (т.е. mainNav е активно)
-            if (mainNav.classList.contains('active') && window.innerWidth <= 768) { 
-                mainNav.classList.remove('active');
-                document.body.classList.remove('no-scroll');
-                // Затваряме и всички отворени dropdown-и
-                dropdownToggles.forEach(toggle => {
-                    const dropdownContent = toggle.nextElementSibling;
-                    if (dropdownContent && dropdownContent.classList.contains('dropdown-content')) {
-                        dropdownContent.classList.remove('active');
-                    }
-                });
-            }
-        });
+      });
     });
 
-    // JavaScript за показване/скриване на dropdown съдържанието при клик на мобилен
-    dropdownToggles.forEach(toggle => {
-        toggle.addEventListener('click', function(e) {
-            if (window.innerWidth <= 768) { // Прилагаме само на мобилни
-                e.preventDefault(); // Предотвратява навигацията към services.html
-                const dropdownContent = this.nextElementSibling;
-                if (dropdownContent && dropdownContent.classList.contains('dropdown-content')) {
-                    // Затваряме всички други отворени dropdown-и, преди да отворим текущия
-                    dropdownToggles.forEach(otherToggle => {
-                        if (otherToggle !== toggle) {
-                            const otherDropdownContent = otherToggle.nextElementSibling;
-                            if (otherDropdownContent && otherDropdownContent.classList.contains('dropdown-content')) {
-                                otherDropdownContent.classList.remove('active');
-                            }
-                        }
-                    });
-                    dropdownContent.classList.toggle('active'); // Добавя/премахва клас 'active'
-                }
-            }
-        });
+    // клик по линк → затваря панела в мобилен layout
+    nav?.querySelectorAll('.tb-link, .tb-drop-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (isMobile() && nav.classList.contains('tb-nav--open')) closeMobileMenu();
+      });
     });
-});
+
+    console.log('[topbar] init');
+  }
+
+  // 🚀 важният фикс: стартирай веднага, ако DOM вече е готов
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+})();

@@ -41,7 +41,7 @@ function ymd(d: Date) {
 export default function BookingApp() {
   // базови състояния
   const [date, setDate] = React.useState(tomorrow());
-  const [duration, setDuration] = React.useState<30 | 60 | 90>(30);
+  const [duration, setDuration] = React.useState<30 | 60 | 90>(60); // ✅ по подразбиране 60 мин
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
 
@@ -68,6 +68,9 @@ export default function BookingApp() {
 
   // контейнерът със скрол за часовете
   const listRef = React.useRef<HTMLDivElement>(null);
+
+  // 🔖 Котва към формата (ще скролваме до нея)
+  const formSectionRef = React.useRef<HTMLDivElement | null>(null);
 
   // поправка за hydration (timezone)
   const [mounted, setMounted] = React.useState(false);
@@ -137,6 +140,26 @@ export default function BookingApp() {
     setNote(null);
   }, [date]);
 
+  // ✅ Плавен скрол към формата, когато се избере час
+  React.useEffect(() => {
+    if (!selectedTime || !formSectionRef.current) return;
+
+    // ако е блокиран скролът от мобилното меню
+    document.body.classList.remove("tb-no-scroll");
+
+    const anchor = formSectionRef.current;
+    const header = document.querySelector(".tb-header") as HTMLElement | null;
+    const offset = header ? header.offsetHeight + 8 : 0;
+    const y = anchor.getBoundingClientRect().top + window.scrollY - offset;
+
+    // двойно rAF = гаранция, че DOM е нареден след условното рендериране
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: y, behavior: "smooth" });
+      });
+    });
+  }, [selectedTime]);
+
   // submit
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -160,21 +183,20 @@ export default function BookingApp() {
         body: JSON.stringify(body),
       });
 
-     // по-защитено парсване
-const ct = res.headers.get("content-type") || "";
-let data: BookAPIResponse | null = null;
+      // по-защитено парсване
+      const ct = res.headers.get("content-type") || "";
+      let data: BookAPIResponse | null = null;
 
-if (ct.includes("application/json")) {
-  data = (await res.json()) as BookAPIResponse;
-} else {
-  const text = await res.text();
-  throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
-}
+      if (ct.includes("application/json")) {
+        data = (await res.json()) as BookAPIResponse;
+      } else {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
+      }
 
-if (!res.ok || !data?.ok) {
-  throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
-}
-
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
+      }
 
       // успех – показваме само потвърждението (скриваме календара/часовете)
       const [h, m] = selectedTime.split(":").map((n) => Number(n));
@@ -208,6 +230,13 @@ if (!res.ok || !data?.ok) {
             <div className="px-6 py-6">
               <h2 className="text-xl font-semibold text-emerald-800 mb-2">Потвърждение</h2>
               <div className="text-emerald-900">{successText}</div>
+
+{/* Адрес и телефон под потвърждението */}
+<div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-4 text-emerald-900">
+  <div><strong>Адрес:</strong> София, ул. Проф. Христо Данов 19</div>
+  <div><strong>Телефон:</strong> <a href="tel:0883688414" className="underline decoration-emerald-500 hover:opacity-80">0883 688 414</a></div>
+</div>
+
 
               <div className="mt-6 flex gap-3">
                 <Link
@@ -364,6 +393,9 @@ if (!res.ok || !data?.ok) {
             </div>
           </div>
         </div>
+
+        {/* 🔖 КОТВА за скрол към формата */}
+        <div ref={formSectionRef} className="h-px" style={{ scrollMarginTop: "calc(var(--tb-h, 64px) + 10px)" }} />
 
         {/* ФОРМА */}
         {selectedTime && (

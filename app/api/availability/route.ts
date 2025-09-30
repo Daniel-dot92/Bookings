@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 type Slot = { time: string; available: boolean };
 
 export async function GET(req: NextRequest) {
-  try {
+  try { 
     const { searchParams } = new URL(req.url);
     const date = searchParams.get("date") || "";
     const duration = Number(searchParams.get("duration") || "30"); // 30 | 60 | 90
