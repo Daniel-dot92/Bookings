@@ -84,7 +84,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <li className="tb-item">
                   <a
                     className="tb-link"
-                    href="https://bookings-git-main-daniels-projects-6392a804.vercel.app/book"
+                    href="https://book.dmphysi0.com/book"
                     // Ако искаш вътрешен route: href="/book"
                   >
                     Свободни часове
@@ -92,7 +92,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 </li>
 
                 <li className="tb-item">
-                  <a className="tb-link" href="https://dmphysi0.com/contact.html">Контакти</a>
+                  <a className="tb-link" href="https://www.dmphysi0.com/contacts.html">Контакти</a>
                 </li>
               </ul>
             </nav>
