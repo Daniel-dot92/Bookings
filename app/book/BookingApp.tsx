@@ -1,7 +1,9 @@
+// /app/book/BookingApp.tsx
 "use client";
 
 import * as React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import Calendar from "@/app/components/Calendar";
 import { fmtDateHeader } from "@/app/lib/ui";
 
@@ -15,6 +17,7 @@ type FormData = {
   procedure: string;
   symptoms?: string;
 };
+
 type BookAPIResponse = {
   ok?: boolean;
   error?: string;
@@ -23,14 +26,34 @@ type BookAPIResponse = {
   sheetsErr?: string;
 };
 
-// + добави най-отгоре до ymd():
+type TherapistKey = "any" | "daniel" | "elitsa";
+
+const THERAPISTS: Record<
+  TherapistKey,
+  { name: string; photo?: string; start?: string; end?: string }
+> = {
+  any: { name: "Без значение" },
+  daniel: {
+    name: "Даниел Митев",
+    photo: "/therapists/daniel.jpg",
+    start: "13:00",
+    end: "19:00",
+  },
+  elitsa: {
+    name: "Елица Колева",
+    photo: "/therapists/elitsa.jpg",
+    start: "09:00",
+    end: "13:00",
+  },
+};
+
+// helpers
 function tomorrow() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
   d.setHours(0, 0, 0, 0);
   return d;
 }
-
 function ymd(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -41,17 +64,18 @@ function ymd(d: Date) {
 export default function BookingApp() {
   // базови състояния
   const [date, setDate] = React.useState(tomorrow());
-  const [duration, setDuration] = React.useState<30 | 60 | 90>(60); // ✅ по подразбиране 60 мин
+  const [duration, setDuration] = React.useState<30 | 60 | 90>(60);
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
 
+  // терапевт
+  const [therapist, setTherapist] = React.useState<TherapistKey>("any");
+
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-
-  // успех – показваме отделен екран и скриваме UI
   const [successText, setSuccessText] = React.useState<string | null>(null);
 
-  // за логиката с 60/90 мин. и бележки
+  // логика 60/90
   const [hourAvailable, setHourAvailable] = React.useState(true);
   const [ninetyAvailable, setNinetyAvailable] = React.useState(true);
   const [note, setNote] = React.useState<string | null>(null);
@@ -66,13 +90,11 @@ export default function BookingApp() {
     symptoms: "",
   });
 
-  // контейнерът със скрол за часовете
+  // скрол
   const listRef = React.useRef<HTMLDivElement>(null);
-
-  // 🔖 Котва към формата (ще скролваме до нея)
   const formSectionRef = React.useRef<HTMLDivElement | null>(null);
 
-  // поправка за hydration (timezone)
+  // timezone
   const [mounted, setMounted] = React.useState(false);
   const [clientTz, setClientTz] = React.useState<string>("");
   React.useEffect(() => {
@@ -80,7 +102,6 @@ export default function BookingApp() {
     setClientTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
 
-  // удобна смяна на продължителността (чисти избрания час/съобщения)
   const setDurationSafe = (d: 30 | 60 | 90) => {
     setSelectedTime(null);
     setError(null);
@@ -88,7 +109,7 @@ export default function BookingApp() {
     setDuration(d);
   };
 
-  // зареждане на слотове
+  // зареждане на слотовете (вкл. therapist)
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -96,12 +117,14 @@ export default function BookingApp() {
 
     try {
       const d = ymd(date);
-      const res = await fetch(`/api/availability?date=${d}&duration=${duration}`);
+      const res = await fetch(
+        `/api/availability?date=${d}&duration=${duration}&therapist=${therapist}`,
+        { cache: "no-store" }
+      );
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
       const json = (await res.json()) as { slots?: Slot[] };
       const list = Array.isArray(json.slots) ? json.slots : [];
 
-      // Проверки за 60 и 90 минути – без автоматичен fallback към 30
       if (duration === 60) {
         const anyHour = list.some((s) => s.available);
         setHourAvailable(anyHour);
@@ -111,7 +134,6 @@ export default function BookingApp() {
         setNinetyAvailable(any90);
         if (!any90) setNote("Няма свободен 90-мин интервал за тази дата.");
       } else {
-        // за 30 мин – позволяваме натискане на 60/90 по подразбиране
         setHourAvailable(true);
         setNinetyAvailable(true);
       }
@@ -123,36 +145,29 @@ export default function BookingApp() {
     } finally {
       setLoading(false);
     }
-  }, [date, duration]);
+  }, [date, duration, therapist]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
-  // При смяна на дата/продължителност – връщаме скрола най-горе
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
-  }, [date, duration]);
+  }, [date, duration, therapist]);
 
-  // При смяна на дата – чистим избрания час и бележката
   React.useEffect(() => {
     setSelectedTime(null);
     setNote(null);
-  }, [date]);
+  }, [date, therapist]);
 
-  // ✅ Плавен скрол към формата, когато се избере час
+  // плавен скрол към формата
   React.useEffect(() => {
     if (!selectedTime || !formSectionRef.current) return;
-
-    // ако е блокиран скролът от мобилното меню
     document.body.classList.remove("tb-no-scroll");
-
     const anchor = formSectionRef.current;
     const header = document.querySelector(".tb-header") as HTMLElement | null;
     const offset = header ? header.offsetHeight + 8 : 0;
     const y = anchor.getBoundingClientRect().top + window.scrollY - offset;
-
-    // двойно rAF = гаранция, че DOM е нареден след условното рендериране
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         window.scrollTo({ top: y, behavior: "smooth" });
@@ -175,6 +190,7 @@ export default function BookingApp() {
         date: ymd(date),
         time: selectedTime,
         duration,
+        therapist, // ← към API
         ...form,
       };
       const res = await fetch("/api/book", {
@@ -183,37 +199,41 @@ export default function BookingApp() {
         body: JSON.stringify(body),
       });
 
-      // по-защитено парсване
       const ct = res.headers.get("content-type") || "";
       let data: BookAPIResponse | null = null;
-
       if (ct.includes("application/json")) {
         data = (await res.json()) as BookAPIResponse;
       } else {
         const text = await res.text();
         throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
       }
-
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
       }
 
-      // успех – показваме само потвърждението (скриваме календара/часовете)
+      // успех
       const [h, m] = selectedTime.split(":").map((n) => Number(n));
       const start = new Date(date);
       start.setHours(h, m, 0, 0);
       const end = new Date(start.getTime() + duration * 60 * 1000);
-
       const toHHMM = (d: Date) =>
         `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      const tName = THERAPISTS[therapist].name;
 
       setSuccessText(
-        `Успешно запазихте час! ${fmtDateHeader(date)} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)`
+        `Успешно запазихте час! ${fmtDateHeader(date)} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)` +
+          (therapist !== "any" ? ` • Терапевт: ${tName}` : "")
       );
 
-      // чистим локални състояния
       setSelectedTime(null);
-      setForm({ firstName: "", lastName: "", email: "", phone: "", procedure: "", symptoms: "" });
+      setForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        procedure: "",
+        symptoms: "",
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Грешка при запис.");
     } finally {
@@ -221,7 +241,7 @@ export default function BookingApp() {
     }
   }
 
-  // --- Ако има успех, показваме само екрана за потвърждение и приключваме рендъра ---
+  // --- Потвърждение ---
   if (successText) {
     return (
       <div className="min-h-screen bg-white">
@@ -231,12 +251,20 @@ export default function BookingApp() {
               <h2 className="text-xl font-semibold text-emerald-800 mb-2">Потвърждение</h2>
               <div className="text-emerald-900">{successText}</div>
 
-{/* Адрес и телефон под потвърждението */}
-<div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-4 text-emerald-900">
-  <div><strong>Адрес:</strong> София, ул. Проф. Христо Данов 19</div>
-  <div><strong>Телефон:</strong> <a href="tel:0883688414" className="underline decoration-emerald-500 hover:opacity-80">0883 688 414</a></div>
-</div>
-
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-4 text-emerald-900">
+                <div>
+                  <strong>Адрес:</strong> София, ул. Проф. Христо Данов 19
+                </div>
+                <div>
+                  <strong>Телефон:</strong>{" "}
+                  <a
+                    href="tel:0883688414"
+                    className="underline decoration-emerald-500 hover:opacity-80"
+                  >
+                    0883 688 414
+                  </a>
+                </div>
+              </div>
 
               <div className="mt-6 flex gap-3">
                 <Link
@@ -252,7 +280,9 @@ export default function BookingApp() {
       </div>
     );
   }
-  // ------------------------------------------------------------------------------------------------
+  // ----------------------
+
+  const t = THERAPISTS[therapist];
 
   return (
     <div className="min-h-screen bg-white">
@@ -268,6 +298,65 @@ export default function BookingApp() {
 
               <Calendar value={date} onChange={setDate} />
 
+              {/* 🔽 ПРОЗОРЕЦ: Изберете терапевт */}
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                {/* заглавие */}
+                <div className="px-4 py-3 border-b border-slate-200">
+                  <h3 className="m-0 text-sm font-semibold text-slate-900">
+                    Изберете терапевт
+                  </h3>
+                </div>
+
+                {/* съдържание */}
+                <div className="px-4 py-3 space-y-3">
+                  {/* бутони */}
+                  <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 shadow-sm text-xs">
+                    {(["any", "daniel", "elitsa"] as TherapistKey[]).map((key) => {
+                      const active = therapist === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setTherapist(key)}
+                          className={`px-3 h-8 rounded-full font-medium transition ${
+                            active
+                              ? "bg-blue-600 text-white shadow-sm"
+                              : "text-slate-700 hover:bg-slate-100"
+                          }`}
+                          aria-pressed={active}
+                        >
+                          {THERAPISTS[key].name}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* инфо за избрания */}
+                  {therapist !== "any" && (
+                    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                      {t.photo && (
+                        <Image
+                          src={t.photo}
+                          alt={t.name}
+                          width={44}
+                          height={44}
+                          className="rounded-full object-cover"
+                        />
+                      )}
+                      <div className="text-sm leading-tight">
+                        <div className="font-semibold text-slate-900">{t.name}</div>
+                        {t.start && t.end && (
+                          <div className="text-slate-500">
+                            Работни часове: {t.start}–{t.end}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* 🔼 край на прозореца */}
+
+              {/* ред: локация */}
               <div
                 className="mt-4 flex items-center gap-2 text-xs text-slate-600"
                 suppressHydrationWarning
@@ -278,10 +367,12 @@ export default function BookingApp() {
             </div>
           </div>
 
-          {/* ЧАСОВЕ – тесен панел, залепен вдясно */}
+          {/* ЧАСОВЕ – тесен панел */}
           <div className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="px-4 pt-4">
-              <div className="text-sm font-medium text-slate-900">{fmtDateHeader(date)}</div>
+              <div className="text-sm font-medium text-slate-900">
+                {fmtDateHeader(date)}
+              </div>
               <div className="mt-2 flex items-center justify-between">
                 <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
@@ -293,7 +384,9 @@ export default function BookingApp() {
                   <button
                     onClick={() => setDurationSafe(30)}
                     className={`px-3 h-8 rounded-full text-xs font-medium transition ${
-                      duration === 30 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
+                      duration === 30
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-700 hover:bg-slate-100"
                     }`}
                     aria-pressed={duration === 30}
                   >
@@ -304,7 +397,9 @@ export default function BookingApp() {
                     onClick={() => hourAvailable && setDurationSafe(60)}
                     disabled={!hourAvailable}
                     className={`px-3 h-8 rounded-full text-xs font-medium transition ${
-                      duration === 60 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
+                      duration === 60
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-700 hover:bg-slate-100"
                     } ${!hourAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     title={!hourAvailable ? "Няма свободен 60-мин интервал за тази дата" : ""}
                     aria-pressed={duration === 60}
@@ -316,7 +411,9 @@ export default function BookingApp() {
                     onClick={() => ninetyAvailable && setDurationSafe(90)}
                     disabled={!ninetyAvailable}
                     className={`px-3 h-8 rounded-full text-xs font-medium transition ${
-                      duration === 90 ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
+                      duration === 90
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-700 hover:bg-slate-100"
                     } ${!ninetyAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     title={!ninetyAvailable ? "Няма свободен 90-мин интервал за тази дата" : ""}
                     aria-pressed={duration === 90}
@@ -329,12 +426,14 @@ export default function BookingApp() {
               {note && <div className="mt-2 text-xs text-slate-500">{note}</div>}
             </div>
 
-            {/* Списък с часове – 6 видими, вертикален скрол */}
+            {/* Списък с часове */}
             <div className="mt-3 p-4 pt-2 flex-1 min-h-0">
               {loading ? (
                 <div className="text-sm text-slate-600">Зареждане…</div>
               ) : slots.length === 0 ? (
-                <div className="text-sm text-slate-500">Няма свободни часове за този ден.</div>
+                <div className="text-sm text-slate-500">
+                  Няма свободни часове за този ден.
+                </div>
               ) : (
                 <div
                   ref={listRef}
@@ -380,7 +479,9 @@ export default function BookingApp() {
                             {s.time}
                           </span>
                           <span
-                            className={`text-xs ${selected ? "text-blue-100" : "text-blue-600"}`}
+                            className={`text-xs ${
+                              selected ? "text-blue-100" : "text-blue-600"
+                            }`}
                           >
                             запази
                           </span>
@@ -394,8 +495,12 @@ export default function BookingApp() {
           </div>
         </div>
 
-        {/* 🔖 КОТВА за скрол към формата */}
-        <div ref={formSectionRef} className="h-px" style={{ scrollMarginTop: "calc(var(--tb-h, 64px) + 10px)" }} />
+        {/* КОТВА за скрол към формата */}
+        <div
+          ref={formSectionRef}
+          className="h-px"
+          style={{ scrollMarginTop: "calc(var(--tb-h, 64px) + 10px)" }}
+        />
 
         {/* ФОРМА */}
         {selectedTime && (
@@ -405,14 +510,19 @@ export default function BookingApp() {
                 Попълнете формата, за да запазите час
               </h2>
               <div className="mt-2 text-center text-sm text-slate-600">
-                {fmtDateHeader(date)} • {selectedTime} • {duration} мин
+                {fmtDateHeader(date)} • {selectedTime} • {duration} мин{" "}
+                {therapist !== "any" ? `• ${t.name}` : ""}
               </div>
             </div>
 
             <form onSubmit={submit} className="p-6 space-y-4">
+              <input type="hidden" name="therapist" value={therapist} />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Име</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Име
+                  </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Вашето име"
@@ -422,7 +532,9 @@ export default function BookingApp() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Фамилия</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Фамилия
+                  </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Вашата фамилия"
@@ -435,7 +547,9 @@ export default function BookingApp() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text_sm font-medium text-slate-700 mb-1">Телефон</label>
+                  <label className="block text_sm font-medium text-slate-700 mb-1">
+                    Телефон
+                  </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0888 123 456"
@@ -445,7 +559,9 @@ export default function BookingApp() {
                   />
                 </div>
                 <div>
-                  <label className="block text_sm font-medium text-slate-700 mb-1">Процедура</label>
+                  <label className="block text_sm font-medium text-slate-700 mb-1">
+                    Процедура
+                  </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Процедура / услуга"
@@ -457,7 +573,9 @@ export default function BookingApp() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Имейл</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Имейл
+                </label>
                 <input
                   type="email"
                   className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -469,7 +587,9 @@ export default function BookingApp() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Опишете симптомите си</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Опишете симптомите си
+                </label>
                 <textarea
                   className="w-full min-h-[140px] rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Опишете болката, местоположение/разпространение, от кога, кое усилва/облекчава, предишни травми/изследвания, цел…"
