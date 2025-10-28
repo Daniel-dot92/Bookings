@@ -20,7 +20,9 @@ function nextAllowedDate(){
 function CalendarPicker({
   value, onChange, locale="bg-BG", weekStartsOn=1,
 }: { value?: string; onChange:(ymd:string)=>void; locale?:string; weekStartsOn?:0|1; }){
-  const today0 = startOfDay(new Date());
+  // стабилна "днес" стойност само при mount → няма warning от hooks deps
+  const today0 = useMemo(() => startOfDay(new Date()), []);
+
   const [cursor, setCursor] = useState(() => new Date(value ? new Date(value) : new Date()));
   const monthLabel = useMemo(
     () => new Intl.DateTimeFormat(locale,{month:"long",year:"numeric"}).format(cursor),
@@ -44,7 +46,7 @@ function CalendarPicker({
       const disabled = d0<today0 || d0.getTime()===today0.getTime() || d0.getDay()===0;
       return { date:d0, disabled };
     });
-  },[cursor, weekStartsOn]);
+  },[cursor, weekStartsOn, today0]);
 
   const selected = value ? startOfDay(new Date(value)) : null;
 

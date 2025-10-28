@@ -1,2 +1,6 @@
+"use client";
 import BookingApp from "./BookingApp";
-export default function Page() { return <BookingApp/>; }
+
+export default function Page() {
+  return <BookingApp />;
+}
