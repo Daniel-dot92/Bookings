@@ -1,4 +1,3 @@
-// /app/layout.tsx
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -64,15 +63,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <li className="tb-item tb-dropdown">
                   <a
                     className="tb-link tb-drop-toggle"
-                    data-dropdown="toggle"
-                    href="https://dmphysi0.com/services.html"
+                    href="https://www.dmphysi0.com/services.html"
                   >
                     Процедури и Цени
                   </a>
                   <div className="tb-drop-menu">
                     <a className="tb-drop-link" href="https://dmphysi0.com/kinesitherapy.html">Кинезитерапия</a>
                     <a className="tb-drop-link" href="https://dmphysi0.com/massages.html">Масажи</a>
-                    
                   </div>
                 </li>
 
@@ -80,15 +77,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                   <a className="tb-link" href="https://dmphysi0.com/pain-conditions.html">Болкови състояния</a>
                 </li>
 
-                {/* Замених "Онлайн Магазин" със "Свободни часове" */}
                 <li className="tb-item">
-                  <a
-                    className="tb-link"
-                    href="https://book.dmphysi0.com/book"
-                    // Ако искаш вътрешен route: href="/book"
-                  >
-                    Свободни часове
-                  </a>
+                  <a className="tb-link" href="https://book.dmphysi0.com/book">Свободни часове</a>
                 </li>
 
                 <li className="tb-item">
@@ -106,9 +96,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {children}
 
         {/* Top bar JS (в /public/topbar.js) */}
-       <Script src="/topbar.js" strategy="afterInteractive" />
-
-      
+        <Script src="/topbar.js" strategy="afterInteractive" />
       </body>
     </html>
   );
