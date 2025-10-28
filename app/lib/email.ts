@@ -1,5 +1,10 @@
 // /app/lib/email.ts
 
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+// @ts-ignore – разрешаваме CJS require през ESM
+const nodemailer = require("nodemailer") as typeof import("nodemailer");
+
 // Данни за имейла и .ics
 export type BookingEmailProps = {
   to: string;
@@ -119,53 +124,40 @@ export async function sendBookingEmailSMTP(p: BookingEmailProps) {
     throw new Error("Missing SMTP_* env vars");
   }
 
-  const nodemailer = await import("nodemailer");
   const transporter = nodemailer.createTransport({
     host: SMTP_HOST,
     port: Number(SMTP_PORT),
     secure: Number(SMTP_PORT) === 465, // Gmail: 465 true, 587 false
     auth: { user: SMTP_USER, pass: SMTP_PASS },
-    logger: true,  // показва SMTP лог в терминала
-    debug: true,   // детайлен SMTP debug
+    logger: true,
+    debug: true,
   });
 
-  // Проверка на връзката и креденшелите
-  try {
-    await transporter.verify();
-    console.info("[EMAIL] SMTP verify OK:", { host: SMTP_HOST, port: SMTP_PORT, user: SMTP_USER });
-  } catch (e: any) {
-    console.error("[EMAIL] SMTP verify FAILED:", e?.message ?? e);
-    throw new Error("SMTP verify failed: " + (e?.message ?? String(e)));
-  }
+  await transporter.verify();
 
   const html = buildEmailHTML(p);
   const ics = buildICS(p);
 
-  // За Gmail е най-сигурно от самия акаунт.
-  // Брандовото име/адрес го слагаме в replyTo.
-  const fromHeader = SMTP_USER;
-  const replyToHeader = EMAIL_FROM && EMAIL_FROM.includes("@") ? EMAIL_FROM : SMTP_USER;
+  // За Gmail – изпращаме "from" от самия акаунт; брандовото име – в replyTo
+  const fromHeader = SMTP_USER!;
+  const replyToHeader =
+    EMAIL_FROM && EMAIL_FROM.includes("@") ? EMAIL_FROM : SMTP_USER!;
 
-  try {
-    const info = await transporter.sendMail({
-      from: fromHeader,       // самият Gmail акаунт
-      sender: SMTP_USER,
-      replyTo: replyToHeader, // какъвто искаш да е „Отговор до“
-      to: p.to,
-      subject: p.subject,
-      html,
-      attachments: [
-        {
-          filename: "dmphysio-booking.ics",
-          content: ics,
-          contentType: "text/calendar; charset=utf-8",
-        },
-      ],
-    });
+  const info = await transporter.sendMail({
+    from: fromHeader,
+    sender: SMTP_USER,
+    replyTo: replyToHeader,
+    to: p.to,
+    subject: p.subject,
+    html,
+    attachments: [
+      {
+        filename: "dmphysio-booking.ics",
+        content: ics,
+        contentType: "text/calendar; charset=utf-8",
+      },
+    ],
+  });
 
-    console.info("[EMAIL] Sent via Gmail SMTP:", { messageId: info.messageId, to: p.to });
-  } catch (e: any) {
-    console.error("[EMAIL] sendMail FAILED:", e?.message ?? e);
-    throw new Error("sendMail failed: " + (e?.message ?? String(e)));
-  }
+  return { messageId: info?.messageId as string | undefined };
 }
