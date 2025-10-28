@@ -48,12 +48,6 @@ const THERAPISTS: Record<
 };
 
 // helpers
-function tomorrow() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
 function ymd(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -62,8 +56,8 @@ function ymd(d: Date) {
 }
 
 export default function BookingApp() {
-  // базови състояния
-  const [date, setDate] = React.useState(tomorrow());
+  // базови състояния (инициализира се само на клиента)
+  const [date, setDate] = React.useState<Date | null>(null);
   const [duration, setDuration] = React.useState<30 | 60 | 90>(60);
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
@@ -97,9 +91,18 @@ export default function BookingApp() {
   // timezone
   const [mounted, setMounted] = React.useState(false);
   const [clientTz, setClientTz] = React.useState<string>("");
+
   React.useEffect(() => {
     setMounted(true);
     setClientTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
+
+  // инициализация на датата само на клиента
+  React.useEffect(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(0, 0, 0, 0);
+    setDate(d);
   }, []);
 
   const setDurationSafe = (d: 30 | 60 | 90) => {
@@ -111,6 +114,7 @@ export default function BookingApp() {
 
   // зареждане на слотовете (вкл. therapist)
   const load = React.useCallback(async () => {
+    if (!date) return;
     setLoading(true);
     setError(null);
     setNote(null);
@@ -148,8 +152,8 @@ export default function BookingApp() {
   }, [date, duration, therapist]);
 
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    if (date) void load();
+  }, [date, load]);
 
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
@@ -178,7 +182,7 @@ export default function BookingApp() {
   // submit
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!selectedTime) {
+    if (!selectedTime || !date) {
       setError("Моля, изберете час.");
       return;
     }
@@ -205,7 +209,9 @@ export default function BookingApp() {
         data = (await res.json()) as BookAPIResponse;
       } else {
         const text = await res.text();
-        throw new Error(`Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`);
+        throw new Error(
+          `Server returned ${res.status}. Not JSON: ${text.slice(0, 120)}`
+        );
       }
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
@@ -217,11 +223,15 @@ export default function BookingApp() {
       start.setHours(h, m, 0, 0);
       const end = new Date(start.getTime() + duration * 60 * 1000);
       const toHHMM = (d: Date) =>
-        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        `${String(d.getHours()).padStart(2, "0")}:${String(
+          d.getMinutes()
+        ).padStart(2, "0")}`;
       const tName = THERAPISTS[therapist].name;
 
       setSuccessText(
-        `Успешно запазихте час! ${fmtDateHeader(date)} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)` +
+        `Успешно запазихте час! ${fmtDateHeader(
+          date
+        )} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)` +
           (therapist !== "any" ? ` • Терапевт: ${tName}` : "")
       );
 
@@ -248,7 +258,9 @@ export default function BookingApp() {
         <div className="mx-auto max-w-3xl px-4 py-10">
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 shadow-sm">
             <div className="px-6 py-6">
-              <h2 className="text-xl font-semibold text-emerald-800 mb-2">Потвърждение</h2>
+              <h2 className="text-xl font-semibold text-emerald-800 mb-2">
+                Потвърждение
+              </h2>
               <div className="text-emerald-900">{successText}</div>
 
               <div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-4 text-emerald-900">
@@ -284,6 +296,10 @@ export default function BookingApp() {
 
   const t = THERAPISTS[therapist];
 
+  if (!date) {
+    return <div className="min-h-screen bg-white" />;
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-6xl px-4 py-8">
@@ -296,7 +312,7 @@ export default function BookingApp() {
                 Запазете час като изберете дата и час
               </h2>
 
-              <Calendar value={date} onChange={setDate} />
+              {date && <Calendar value={date} onChange={setDate} />}
 
               {/* 🔽 ПРОЗОРЕЦ: Изберете терапевт */}
               <div className="mt-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -311,23 +327,25 @@ export default function BookingApp() {
                 <div className="px-4 py-3 space-y-3">
                   {/* бутони */}
                   <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 shadow-sm text-xs">
-                    {(["any", "daniel", "elitsa"] as TherapistKey[]).map((key) => {
-                      const active = therapist === key;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => setTherapist(key)}
-                          className={`px-3 h-8 rounded-full font-medium transition ${
-                            active
-                              ? "bg-blue-600 text-white shadow-sm"
-                              : "text-slate-700 hover:bg-slate-100"
-                          }`}
-                          aria-pressed={active}
-                        >
-                          {THERAPISTS[key].name}
-                        </button>
-                      );
-                    })}
+                    {(["any", "daniel", "elitsa"] as TherapistKey[]).map(
+                      (key) => {
+                        const active = therapist === key;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => setTherapist(key)}
+                            className={`px-3 h-8 rounded-full font-medium transition ${
+                              active
+                                ? "bg-blue-600 text-white shadow-sm"
+                                : "text-slate-700 hover:bg-slate-100"
+                            }`}
+                            aria-pressed={active}
+                          >
+                            {THERAPISTS[key].name}
+                          </button>
+                        );
+                      }
+                    )}
                   </div>
 
                   {/* инфо за избрания */}
@@ -343,7 +361,9 @@ export default function BookingApp() {
                         />
                       )}
                       <div className="text-sm leading-tight">
-                        <div className="font-semibold text-slate-900">{t.name}</div>
+                        <div className="font-semibold text-slate-900">
+                          {t.name}
+                        </div>
                         {t.start && t.end && (
                           <div className="text-slate-500">
                             Работни часове: {t.start}–{t.end}
@@ -370,8 +390,11 @@ export default function BookingApp() {
           {/* ЧАСОВЕ – тесен панел */}
           <div className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="px-4 pt-4">
-              <div className="text-sm font-medium text-slate-900">
-                {fmtDateHeader(date)}
+              <div
+                className="text-sm font-medium text-slate-900"
+                suppressHydrationWarning
+              >
+                {date ? fmtDateHeader(date) : ""}
               </div>
               <div className="mt-2 flex items-center justify-between">
                 <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
@@ -401,7 +424,11 @@ export default function BookingApp() {
                         ? "bg-blue-600 text-white shadow-sm"
                         : "text-slate-700 hover:bg-slate-100"
                     } ${!hourAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
-                    title={!hourAvailable ? "Няма свободен 60-мин интервал за тази дата" : ""}
+                    title={
+                      !hourAvailable
+                        ? "Няма свободен 60-мин интервал за тази дата"
+                        : ""
+                    }
                     aria-pressed={duration === 60}
                   >
                     60 мин
@@ -415,7 +442,11 @@ export default function BookingApp() {
                         ? "bg-blue-600 text-white shadow-sm"
                         : "text-slate-700 hover:bg-slate-100"
                     } ${!ninetyAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
-                    title={!ninetyAvailable ? "Няма свободен 90-мин интервал за тази дата" : ""}
+                    title={
+                      !ninetyAvailable
+                        ? "Няма свободен 90-мин интервал за тази дата"
+                        : ""
+                    }
                     aria-pressed={duration === 90}
                   >
                     90 мин
@@ -510,8 +541,8 @@ export default function BookingApp() {
                 Попълнете формата, за да запазите час
               </h2>
               <div className="mt-2 text-center text-sm text-slate-600">
-                {fmtDateHeader(date)} • {selectedTime} • {duration} мин{" "}
-                {therapist !== "any" ? `• ${t.name}` : ""}
+                {date ? fmtDateHeader(date) : ""} • {selectedTime} • {duration}{" "}
+                мин {therapist !== "any" ? `• ${t.name}` : ""}
               </div>
             </div>
 
@@ -528,7 +559,9 @@ export default function BookingApp() {
                     placeholder="Вашето име"
                     required
                     value={form.firstName}
-                    onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, firstName: e.target.value })
+                    }
                   />
                 </div>
                 <div>
@@ -540,7 +573,9 @@ export default function BookingApp() {
                     placeholder="Вашата фамилия"
                     required
                     value={form.lastName}
-                    onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, lastName: e.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -555,7 +590,9 @@ export default function BookingApp() {
                     placeholder="0888 123 456"
                     required
                     value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, phone: e.target.value })
+                    }
                   />
                 </div>
                 <div>
@@ -567,7 +604,9 @@ export default function BookingApp() {
                     placeholder="Процедура / услуга"
                     required
                     value={form.procedure}
-                    onChange={(e) => setForm({ ...form, procedure: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, procedure: e.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -594,7 +633,9 @@ export default function BookingApp() {
                   className="w-full min-h-[140px] rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Опишете болката, местоположение/разпространение, от кога, кое усилва/облекчава, предишни травми/изследвания, цел…"
                   value={form.symptoms || ""}
-                  onChange={(e) => setForm({ ...form, symptoms: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, symptoms: e.target.value })
+                  }
                 />
               </div>
 

@@ -8,11 +8,17 @@ export const dynamic = "force-dynamic";
 type Slot = { time: string; available: boolean };
 type TherapistKey = "any" | "daniel" | "elitsa";
 
-// работни прозорци (локално време Europe/Sofia)
-const SHIFT = {
+// Делнични (Mon–Fri)
+const WEEKDAY_SHIFT = {
   daniel: { START: "13:00", END: "19:00" },
   elitsa: { START: "09:00", END: "13:00" },
-};
+} as const;
+
+// Събота
+const SAT_SHIFT = {
+  daniel: { START: "13:00", END: "16:00" },
+  elitsa: { START: "09:00", END: "13:00" },
+} as const;
 
 export async function GET(req: NextRequest) {
   try {
@@ -25,17 +31,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ slots: [] });
     }
 
-    // ❌ Неделя: никакви слотове
-    {
-      const dNoon = parseZoned(date, "12:00");
-      const wd = new Intl.DateTimeFormat("en-US", {
-        weekday: "short",
-        timeZone: "Europe/Sofia",
-      }).format(dNoon);
-      if (wd === "Sun") return NextResponse.json({ slots: [] });
+    // Ден от седмицата по Europe/Sofia
+    const dNoon = parseZoned(date, "12:00");
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      timeZone: "Europe/Sofia",
+    }).format(dNoon);
+
+    // ❌ Неделя: почивен ден
+    if (weekday === "Sun") {
+      return NextResponse.json({ slots: [] });
     }
 
-    // един календар за всички – както пожела
     const calId = process.env.BOOKING_CALENDAR_ID;
     if (!calId) {
       console.error("BOOKING_CALENDAR_ID is missing.");
@@ -44,7 +51,7 @@ export async function GET(req: NextRequest) {
 
     const cal = getCalendar();
 
-    // вземаме заетост за целия ден (по-бързо е един път)
+    // Вземаме заетост за целия ден
     const { timeMin, timeMax } = dayBounds(date);
     const fb = await cal.freebusy.query({
       requestBody: {
@@ -65,7 +72,7 @@ export async function GET(req: NextRequest) {
         return start < bEnd && end > bStart;
       });
 
-    // помощник: прави слотове за зададен прозорец
+    // Генерира слотове за зададен прозорец
     function buildSlotsForWindow(startHHmm: string, endHHmm: string): Slot[] {
       const result: Slot[] = [];
       const winStart = parseZoned(date, startHHmm);
@@ -80,13 +87,17 @@ export async function GET(req: NextRequest) {
             ? new Date(start.getTime() + 60 * 60 * 1000)
             : new Date(start.getTime() + 90 * 60 * 1000);
 
-        // изцяло в рамките на прозореца
+        // слотът трябва да е изцяло в рамките на работния прозорец
         if (start < winStart || end > winEnd) continue;
 
         result.push({ time: label, available: isFree(start, end) });
       }
       return result;
     }
+
+    // Избор на прозорци според деня
+    const isSaturday = weekday === "Sat";
+    const SHIFT = isSaturday ? SAT_SHIFT : WEEKDAY_SHIFT;
 
     let slots: Slot[] = [];
 
@@ -95,7 +106,7 @@ export async function GET(req: NextRequest) {
     } else if (therapist === "elitsa") {
       slots = buildSlotsForWindow(SHIFT.elitsa.START, SHIFT.elitsa.END);
     } else {
-      // any → обединение: всеки слот, който се побира изцяло в някой прозорец
+      // "any" → обединяваме прозорците на двамата
       const a = buildSlotsForWindow(SHIFT.elitsa.START, SHIFT.elitsa.END);
       const b = buildSlotsForWindow(SHIFT.daniel.START, SHIFT.daniel.END);
       const map = new Map<string, Slot>();

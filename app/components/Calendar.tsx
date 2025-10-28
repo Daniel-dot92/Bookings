@@ -1,4 +1,3 @@
-// app/components/Calendar.tsx
 "use client";
 
 import * as React from "react";
@@ -92,15 +91,16 @@ export default function Calendar({ value, onChange }: Props) {
 
       for (let i = 0; i < 7; i++) {
         const clone = day;
-       const out = !isSameMonth(clone, monthStart);
+        const out = !isSameMonth(clone, monthStart);
 
-// ↓ неразрешени: преди утре, след +21 дни и НЕДЕЛЯ
-const tooEarly = clone < minDate;
-const tooLate = clone > maxDate;
-const isSunday = clone.getDay() === 0; // 0 = неделя
+        // ↓ неразрешени: преди утре, след +21 дни и НЕДЕЛЯ
+        const tooEarly = clone < minDate;
+        const tooLate = clone > maxDate;
+        const isSunday = clone.getDay() === 0; // 0 = неделя
 
-const disabled = out || tooEarly || tooLate || isSunday;
-
+        // ВАЖНО: махаме "out" от disabled,
+        // за да може 1-ви от следващия месец да е кликаем в текущата решетка
+        const disabled = tooEarly || tooLate || isSunday;
 
         const selected = isSameDay(clone, value);
 
@@ -116,6 +116,8 @@ const disabled = out || tooEarly || tooLate || isSunday;
                 ? "text-slate-300 cursor-not-allowed"
                 : "text-slate-800 hover:bg-slate-100",
               selected ? "bg-black text-white hover:bg-black" : "",
+              // визуално разграничи дните извън текущия месец
+              !selected && !disabled && out ? "text-slate-400" : "",
             ].join(" ")}
             title={format(clone, "PPP", { locale: bgLocale })}
           >

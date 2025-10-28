@@ -72,7 +72,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                   <div className="tb-drop-menu">
                     <a className="tb-drop-link" href="https://dmphysi0.com/kinesitherapy.html">Кинезитерапия</a>
                     <a className="tb-drop-link" href="https://dmphysi0.com/massages.html">Масажи</a>
-                    <a className="tb-drop-link" href="https://dmphysi0.com/online-recovery.html">Онлайн Процедури</a>
+                    
                   </div>
                 </li>
 
