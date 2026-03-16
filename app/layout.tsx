@@ -1,4 +1,4 @@
-﻿import type { Metadata, Viewport } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./styles/top-bar.css";
@@ -6,18 +6,15 @@ import Script from "next/script";
 import Image from "next/image";
 import { getSiteUrl } from "@/app/lib/site";
 
-/* Fonts */
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
-/* SEO */
 export const metadata: Metadata = {
   title: "DM PHYSIO",
   metadataBase: new URL(getSiteUrl()),
-  description: "DM PHYSIO вЂ“ РѕРЅР»Р°Р№РЅ Р·Р°РїРёСЃРІР°РЅРµ РЅР° С‡Р°СЃ",
+  description: "DM PHYSIO \u2013 \u043e\u043d\u043b\u0430\u0439\u043d \u0437\u0430\u043f\u0438\u0441\u0432\u0430\u043d\u0435 \u043d\u0430 \u0447\u0430\u0441",
 };
 
-/* Viewport */
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -27,14 +24,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="bg">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* ======= Top bar ======= */}
         <header className="tb-header" role="banner">
           <div className="tb-inner">
-            {/* Р›РѕРіРѕ */}
-            <a href="https://dmphysi0.com" aria-label="РќР°С‡Р°Р»Рѕ" className="tb-logo-link">
+            <a href="https://dmphysi0.com" aria-label="\u041d\u0430\u0447\u0430\u043b\u043e" className="tb-logo-link">
               <Image
                 src="/logo.png"
-                alt="Р”Рњ Р¤РёР·РёРѕ Р›РѕРіРѕ"
+                alt="\u0414\u041c \u0424\u0438\u0437\u0438\u043e \u041b\u043e\u0433\u043e"
                 width={60}
                 height={60}
                 className="tb-logo"
@@ -42,12 +37,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               />
             </a>
 
-            {/* РҐР°РјР±СѓСЂРіРµСЂ (SVG) */}
             <button
               className="tb-burger"
               aria-controls="tb-primary-nav"
               aria-expanded="false"
-              aria-label="РћС‚РІРѕСЂРё РјРµРЅСЋ"
+              aria-label="\u041e\u0442\u0432\u043e\u0440\u0438 \u043c\u0435\u043d\u044e"
               type="button"
             >
               <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false">
@@ -55,11 +49,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               </svg>
             </button>
 
-            {/* РќР°РІРёРіР°С†РёСЏ */}
-            <nav className="tb-nav" id="tb-primary-nav" aria-label="РћСЃРЅРѕРІРЅР° РЅР°РІРёРіР°С†РёСЏ">
+            <nav className="tb-nav" id="tb-primary-nav" aria-label="\u041e\u0441\u043d\u043e\u0432\u043d\u0430 \u043d\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u044f">
               <ul className="tb-menu">
                 <li className="tb-item">
-                  <a className="tb-link" href="https://dmphysi0.com">РќР°С‡Р°Р»Рѕ</a>
+                  <a className="tb-link" href="https://dmphysi0.com">{"\u041d\u0430\u0447\u0430\u043b\u043e"}</a>
                 </li>
 
                 <li className="tb-item tb-dropdown">
@@ -67,37 +60,34 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                     className="tb-link tb-drop-toggle"
                     href="https://www.dmphysi0.com/services.html"
                   >
-                    РџСЂРѕС†РµРґСѓСЂРё Рё Р¦РµРЅРё
+                    {"\u041f\u0440\u043e\u0446\u0435\u0434\u0443\u0440\u0438 \u0438 \u0426\u0435\u043d\u0438"}
                   </a>
                   <div className="tb-drop-menu">
-                    <a className="tb-drop-link" href="https://dmphysi0.com/kinesitherapy.html">РљРёРЅРµР·РёС‚РµСЂР°РїРёСЏ</a>
-                    <a className="tb-drop-link" href="https://dmphysi0.com/massages.html">РњР°СЃР°Р¶Рё</a>
+                    <a className="tb-drop-link" href="https://dmphysi0.com/kinesitherapy.html">{"\u041a\u0438\u043d\u0435\u0437\u0438\u0442\u0435\u0440\u0430\u043f\u0438\u044f"}</a>
+                    <a className="tb-drop-link" href="https://dmphysi0.com/massages.html">{"\u041c\u0430\u0441\u0430\u0436\u0438"}</a>
                   </div>
                 </li>
 
                 <li className="tb-item">
-                  <a className="tb-link" href="https://dmphysi0.com/pain-conditions.html">Р‘РѕР»РєРѕРІРё СЃСЉСЃС‚РѕСЏРЅРёСЏ</a>
+                  <a className="tb-link" href="https://dmphysi0.com/pain-conditions.html">{"\u0411\u043e\u043b\u043a\u043e\u0432\u0438 \u0441\u044a\u0441\u0442\u043e\u044f\u043d\u0438\u044f"}</a>
                 </li>
 
                 <li className="tb-item">
-                  <a className="tb-link" href="/book">РЎРІРѕР±РѕРґРЅРё С‡Р°СЃРѕРІРµ</a>
+                  <a className="tb-link" href="/book">{"\u0421\u0432\u043e\u0431\u043e\u0434\u043d\u0438 \u0447\u0430\u0441\u043e\u0432\u0435"}</a>
                 </li>
 
                 <li className="tb-item">
-                  <a className="tb-link" href="https://www.dmphysi0.com/contacts.html">РљРѕРЅС‚Р°РєС‚Рё</a>
+                  <a className="tb-link" href="https://www.dmphysi0.com/contacts.html">{"\u041a\u043e\u043d\u0442\u0430\u043a\u0442\u0438"}</a>
                 </li>
               </ul>
             </nav>
           </div>
         </header>
 
-        {/* РћС‚РјРµСЃС‚РІР°РЅРµ РїРѕРґ fixed header */}
         <div className="tb-push" />
 
-        {/* Page content */}
         {children}
 
-        {/* Top bar JS (РІ /public/topbar.js) */}
         <Script src="/booking-topbar.js" strategy="afterInteractive" />
       </body>
     </html>
