@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = "https://book.dmphysi0.com";
+const DEFAULT_SITE_URL = "https://www.dmphysi0.com";
 const DEFAULT_BOOKING_PATH = "/book";
 
 function normalizeAbsoluteUrl(raw: string, fallback: string): string {
