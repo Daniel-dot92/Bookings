@@ -8,6 +8,9 @@ import { getSiteUrl } from "@/app/lib/site";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const hotjarId = Number.isFinite(Number(process.env.NEXT_PUBLIC_HOTJAR_ID))
+  ? Number(process.env.NEXT_PUBLIC_HOTJAR_ID)
+  : 6534654;
 
 export const metadata: Metadata = {
   title: "DM PHYSIO",
@@ -88,6 +91,15 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 
         {children}
 
+        <Script id="hotjar" strategy="afterInteractive">{`
+          (function(h,o,t,j,a,r){
+            h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};
+            h._hjSettings={hjid:${hotjarId},hjsv:6};
+            a=o.getElementsByTagName('head')[0];
+            r=o.createElement('script');r.async=1;r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;
+            a.appendChild(r);
+          })(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');
+        `}</Script>
         <Script src="/booking-topbar.js" strategy="afterInteractive" />
       </body>
     </html>
