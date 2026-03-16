@@ -188,3 +188,59 @@ export async function sendBookingEmailSMTP(p: BookingEmailProps) {
 
   return { messageId: info?.messageId as string | undefined };
 }
+// ========= Имейл за ревю след посещение =========
+export async function sendReviewRequestEmailSMTP(p: {
+  to: string;
+  firstName: string;
+  lastName?: string;
+  mapReviewUrl: string;
+}) {
+  const env = process.env as Record<string, string | undefined>;
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM } = env;
+  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+    throw new Error("Missing SMTP_* environment variables");
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: Number(SMTP_PORT),
+    secure: Number(SMTP_PORT) === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    logger: true,
+    debug: true,
+  });
+  await transporter.verify();
+
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const html = `<!doctype html>
+<html>
+<body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;background:#fff;margin:0;padding:20px">
+  <div style="max-width:600px;margin:auto">
+    <h2 style="margin:0 0 8px 0;color:#111827;">Как мина процедурата?</h2>
+    <p style="margin:0 0 12px 0">Здравейте, ${esc(p.firstName)}${p.lastName ? " " + esc(p.lastName) : ""}!</p>
+    <p style="margin:0 0 12px 0">Ще се радваме да оставите кратко ревю за работата ни. Вашата обратна връзка помага на други хора да вземат решение.</p>
+    <div style="margin:18px 0">
+      <a href="${esc(p.mapReviewUrl)}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600">Оставете ревю в Google</a>
+    </div>
+    <p style="margin:12px 0;color:#334155">Благодарим ви!<br><strong>DM PHYSIO</strong></p>
+  </div>
+</body>
+</html>`;
+
+  const fromHeader = SMTP_USER!;
+  const replyToHeader =
+    EMAIL_FROM && EMAIL_FROM.includes("@") ? EMAIL_FROM : SMTP_USER!;
+
+  const info = await transporter.sendMail({
+    from: fromHeader,
+    sender: SMTP_USER,
+    replyTo: replyToHeader,
+    to: p.to,
+    subject: "Ще ни оставите ли кратко ревю? 🙂",
+    html,
+  });
+
+  return { messageId: info?.messageId as string | undefined };
+}

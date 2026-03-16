@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
 
     // 🗓️ Проверка за заетост
     const cal = getCalendar();
-    console.log("[BOOK] stage: freebusy-check");
+    console.log("[BOOK] stage: freebusy-check]");
     const fb = await cal.freebusy.query({
       requestBody: {
         timeMin: startUtc.toISOString(),
@@ -203,6 +203,19 @@ export async function POST(req: NextRequest) {
       guestsCanSeeOtherGuests: false,
     };
     if (SEND_GCAL_INVITE) eventRequestBody.attendees = [{ email }];
+
+    // ===== ДОБАВКА: метаданни за имейл за ревю (край + 30 мин) =====
+    const reviewDueAtISO = new Date(endUtc.getTime() + 30 * 60 * 1000).toISOString();
+    eventRequestBody.extendedProperties = {
+      private: {
+        reviewDueAt: reviewDueAtISO,
+        reviewEmailSent: "0",
+        customerEmail: email,
+        customerFirstName: firstName,
+        customerLastName: lastName || "",
+      },
+    };
+    // ===============================================================
 
     console.log("[BOOK] stage: create-event");
     const created = await cal.events.insert({
@@ -278,7 +291,6 @@ export async function POST(req: NextRequest) {
         tzid,
         extraHtml: `
           <p style="margin-top:16px;">
-            
             <a href="${mapsUrl}" target="_blank"
                style="display:inline-block;margin-top:8px;padding:10px 16px;
                       background:#00c4c4;color:#fff;font-weight:bold;

@@ -4,6 +4,7 @@ import "./globals.css";
 import "./styles/top-bar.css";
 import Script from "next/script";
 import Image from "next/image";
+import { getSiteUrl } from "@/app/lib/site";
 
 /* Fonts */
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -12,6 +13,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 /* SEO */
 export const metadata: Metadata = {
   title: "DM PHYSIO",
+  metadataBase: new URL(getSiteUrl()),
   description: "DM PHYSIO – онлайн записване на час",
 };
 
@@ -78,7 +80,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 </li>
 
                 <li className="tb-item">
-                  <a className="tb-link" href="https://book.dmphysi0.com/book">Свободни часове</a>
+                  <a className="tb-link" href="/book">Свободни часове</a>
                 </li>
 
                 <li className="tb-item">
