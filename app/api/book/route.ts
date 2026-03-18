@@ -147,6 +147,15 @@ export async function POST(req: NextRequest) {
     const tzid = "Europe/Sofia";
     const startUtc = parseZoned(date, time);
     const endUtc = new Date(startUtc.getTime() + dur * 60 * 1000);
+
+    // Не допускаме запис в минал или вече започнал час.
+    if (startUtc <= new Date()) {
+      return NextResponse.json(
+        { ok: false, error: "Този час вече е минал. Моля, изберете бъдещ час." },
+        { status: 400 }
+      );
+    }
+
     const startISO = toLocalISO(startUtc, tzid);
     const endISO = toLocalISO(endUtc, tzid);
     const dateText = formatBGDate(startUtc, tzid);

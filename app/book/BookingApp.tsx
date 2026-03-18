@@ -100,8 +100,10 @@ export default function BookingApp() {
   // инициализация на датата само на клиента
   React.useEffect(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 1);
     d.setHours(0, 0, 0, 0);
+    while (d.getDay() === 0) {
+      d.setDate(d.getDate() + 1);
+    }
     setDate(d);
   }, []);
 

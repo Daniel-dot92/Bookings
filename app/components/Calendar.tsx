@@ -29,7 +29,7 @@ export default function Calendar({ value, onChange }: Props) {
 
   // Ограничения
   const today = startOfDay(new Date());
-  const minDate = startOfDay(addDays(today, 1));   // от утре
+  const minDate = startOfDay(today);               // от днес
   const maxDate = startOfDay(addDays(today, 21));  // +3 седмици
 
   function renderHeader() {
@@ -93,7 +93,7 @@ export default function Calendar({ value, onChange }: Props) {
         const clone = day;
         const out = !isSameMonth(clone, monthStart);
 
-        // ↓ неразрешени: преди утре, след +21 дни и НЕДЕЛЯ
+        // ↓ неразрешени: преди днес, след +21 дни и НЕДЕЛЯ
         const tooEarly = clone < minDate;
         const tooLate = clone > maxDate;
         const isSunday = clone.getDay() === 0; // 0 = неделя

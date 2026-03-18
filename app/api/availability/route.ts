@@ -8,6 +8,15 @@ export const dynamic = "force-dynamic";
 type Slot = { time: string; available: boolean };
 type TherapistKey = "any" | "daniel" | "elitsa";
 
+function ymdInSofia(d: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Sofia",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 // Делнични (Mon–Fri)
 const WEEKDAY_SHIFT = {
   daniel: { START: "13:00", END: "19:00" },
@@ -50,6 +59,9 @@ export async function GET(req: NextRequest) {
     }
 
     const cal = getCalendar();
+    const now = new Date();
+    const todayInSofia = ymdInSofia(now);
+    const isRequestedDateToday = date === todayInSofia;
 
     // Вземаме заетост за целия ден
     const { timeMin, timeMax } = dayBounds(date);
@@ -79,6 +91,9 @@ export async function GET(req: NextRequest) {
       const winEnd = parseZoned(date, endHHmm);
 
       for (const start of generateSlots(date, startHHmm, endHHmm, 30)) {
+        // За днешния ден показваме само бъдещи часове.
+        if (isRequestedDateToday && start <= now) continue;
+
         const label = fmtHHmmLocal(start);
         const end =
           duration === 30

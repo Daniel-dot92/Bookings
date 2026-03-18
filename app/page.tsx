@@ -11,7 +11,7 @@ const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0,0,0,0); re
 const fmtYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 function nextAllowedDate(){
   const t0 = startOfDay(new Date());
-  const d = new Date(t0); d.setDate(d.getDate()+1);
+  const d = new Date(t0);
   while (d.getDay()===0) d.setDate(d.getDate()+1);
   return fmtYMD(d);
 }
@@ -43,7 +43,7 @@ function CalendarPicker({
     return Array.from({length:42},(_,i)=>{
       const d = new Date(start); d.setDate(start.getDate()+i);
       const d0 = startOfDay(d);
-      const disabled = d0<today0 || d0.getTime()===today0.getTime() || d0.getDay()===0;
+      const disabled = d0<today0 || d0.getDay()===0;
       return { date:d0, disabled };
     });
   },[cursor, weekStartsOn, today0]);
