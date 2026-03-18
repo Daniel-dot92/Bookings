@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 type Slot = { time: string; available: boolean };
 type TherapistKey = "any" | "daniel" | "elitsa";
+const MIN_LEAD_TIME_MINUTES = 120;
 
 function ymdInSofia(d: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -60,6 +61,9 @@ export async function GET(req: NextRequest) {
 
     const cal = getCalendar();
     const now = new Date();
+    const minLeadTime = new Date(
+      now.getTime() + MIN_LEAD_TIME_MINUTES * 60 * 1000
+    );
     const todayInSofia = ymdInSofia(now);
     const isRequestedDateToday = date === todayInSofia;
 
@@ -91,8 +95,8 @@ export async function GET(req: NextRequest) {
       const winEnd = parseZoned(date, endHHmm);
 
       for (const start of generateSlots(date, startHHmm, endHHmm, 30)) {
-        // За днешния ден показваме само бъдещи часове.
-        if (isRequestedDateToday && start <= now) continue;
+        // За днешния ден показваме само часове поне 2 часа напред.
+        if (isRequestedDateToday && start < minLeadTime) continue;
 
         const label = fmtHHmmLocal(start);
         const end =

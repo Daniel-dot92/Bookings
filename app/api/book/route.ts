@@ -29,6 +29,7 @@ const SHIFT = {
   daniel: { START: "13:00", END: "19:00" },
   elitsa: { START: "09:00", END: "13:00" },
 };
+const MIN_LEAD_TIME_MINUTES = 120;
 
 // 📥 Четене на заявка
 async function readBody(req: NextRequest): Promise<Payload> {
@@ -148,10 +149,15 @@ export async function POST(req: NextRequest) {
     const startUtc = parseZoned(date, time);
     const endUtc = new Date(startUtc.getTime() + dur * 60 * 1000);
 
-    // Не допускаме запис в минал или вече започнал час.
-    if (startUtc <= new Date()) {
+    // Не допускаме запис в минал или в следващите 2 часа.
+    const minLeadTime = new Date(Date.now() + MIN_LEAD_TIME_MINUTES * 60 * 1000);
+    if (startUtc < minLeadTime) {
       return NextResponse.json(
-        { ok: false, error: "Този час вече е минал. Моля, изберете бъдещ час." },
+        {
+          ok: false,
+          error:
+            "За онлайн запис е нужен минимум 2 часа буфер. Моля, изберете по-късен час.",
+        },
         { status: 400 }
       );
     }
