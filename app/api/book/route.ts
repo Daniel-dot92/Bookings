@@ -100,6 +100,37 @@ function formatHHMM(d: Date, timeZone: string) {
   }).format(d);
 }
 
+function ymdInSofia(d: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Sofia",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function hmInSofia(d: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Sofia",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour * 60 + minute;
+}
+
+function addDaysToYmd(ymd: string, days: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 // 🚀 Главна функция
 export async function POST(req: NextRequest) {
   try {
@@ -136,6 +167,21 @@ export async function POST(req: NextRequest) {
     const wd = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "Europe/Sofia" }).format(dNoon);
     if (wd === "Sun")
       return NextResponse.json({ ok: false, error: "Неделя е почивен ден. Моля, изберете друга дата." }, { status: 400 });
+
+    const now = new Date();
+    const todayInSofia = ymdInSofia(now);
+    const tomorrowInSofia = addDaysToYmd(todayInSofia, 1);
+    const isAfterTenPmInSofia = hmInSofia(now) >= 22 * 60;
+    if (isAfterTenPmInSofia && date === tomorrowInSofia && time === "08:00") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "След 22:00 не може да се записва час за 08:00 на следващия ден. Моля, изберете друг час.",
+        },
+        { status: 400 }
+      );
+    }
 
     const within = (t: string, s: string, e: string) => t >= s && t <= e;
     if (therapist === "daniel" && !within(time, SHIFT.daniel.START, SHIFT.daniel.END))

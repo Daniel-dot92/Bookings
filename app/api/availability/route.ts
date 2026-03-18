@@ -18,6 +18,28 @@ function ymdInSofia(d: Date) {
   }).format(d);
 }
 
+function hmInSofia(d: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Sofia",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour * 60 + minute;
+}
+
+function addDaysToYmd(ymd: string, days: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 // Делнични (Mon–Fri)
 const WEEKDAY_SHIFT = {
   daniel: { START: "13:00", END: "19:00" },
@@ -64,8 +86,12 @@ export async function GET(req: NextRequest) {
     const minLeadTime = new Date(
       now.getTime() + MIN_LEAD_TIME_MINUTES * 60 * 1000
     );
+    const nowMinutesInSofia = hmInSofia(now);
+    const isAfterTenPmInSofia = nowMinutesInSofia >= 22 * 60;
     const todayInSofia = ymdInSofia(now);
+    const tomorrowInSofia = addDaysToYmd(todayInSofia, 1);
     const isRequestedDateToday = date === todayInSofia;
+    const isRequestedDateTomorrow = date === tomorrowInSofia;
 
     // Вземаме заетост за целия ден
     const { timeMin, timeMax } = dayBounds(date);
@@ -99,6 +125,10 @@ export async function GET(req: NextRequest) {
         if (isRequestedDateToday && start < minLeadTime) continue;
 
         const label = fmtHHmmLocal(start);
+        // След 22:00 не показваме слот 08:00 за следващия ден.
+        if (isRequestedDateTomorrow && isAfterTenPmInSofia && label === "08:00")
+          continue;
+
         const end =
           duration === 30
             ? new Date(start.getTime() + 30 * 60 * 1000)
