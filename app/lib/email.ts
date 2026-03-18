@@ -224,7 +224,7 @@ export async function sendReviewRequestEmailSMTP(p: {
 
     <h2 style="margin:0 0 10px 0;color:#111827;font-size:22px;line-height:1.3;">Как се чувствате след терапията?</h2>
 
-    <p style="margin:0 0 10px 0;">По-леко движение? По-малко болка? Или най-накрая усещате, че тялото ви започва да работи както трябва?</p>
+    <p style="margin:0 0 10px 0;">По-леко движение? По-малко болка?</p>
 
     <p style="margin:0 0 10px 0;">За нас това означава много.</p>
 
@@ -240,9 +240,8 @@ export async function sendReviewRequestEmailSMTP(p: {
 
     <p style="margin:0;color:#334155;">С уважение,<br><strong>DM PHYSIO</strong></p>
     <p style="margin:12px 0 0 0;color:#334155;">
-      Даниел Митев - Телефон<br>
-      0883 688 414<br>
-      Елица Колева -телефон 0893 673 007
+      Даниел Митев - 0883 688 414<br>
+      Елица Колева - 0893 673 007
     </p>
   </div>
 </body>
