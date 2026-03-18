@@ -172,12 +172,13 @@ export async function POST(req: NextRequest) {
     const todayInSofia = ymdInSofia(now);
     const tomorrowInSofia = addDaysToYmd(todayInSofia, 1);
     const isAfterTenPmInSofia = hmInSofia(now) >= 22 * 60;
-    if (isAfterTenPmInSofia && date === tomorrowInSofia && time === "08:00") {
+    const isBlockedEarlyMorningSlot = time === "08:00" || time === "08:30";
+    if (isAfterTenPmInSofia && date === tomorrowInSofia && isBlockedEarlyMorningSlot) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "След 22:00 не може да се записва час за 08:00 на следващия ден. Моля, изберете друг час.",
+            "След 22:00 не може да се записва час за 08:00 или 08:30 на следващия ден. Моля, изберете друг час.",
         },
         { status: 400 }
       );

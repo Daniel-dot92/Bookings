@@ -125,9 +125,14 @@ export async function GET(req: NextRequest) {
         if (isRequestedDateToday && start < minLeadTime) continue;
 
         const label = fmtHHmmLocal(start);
-        // След 22:00 не показваме слот 08:00 за следващия ден.
-        if (isRequestedDateTomorrow && isAfterTenPmInSofia && label === "08:00")
+        // След 22:00 не показваме слотове 08:00 и 08:30 за следващия ден.
+        if (
+          isRequestedDateTomorrow &&
+          isAfterTenPmInSofia &&
+          (label === "08:00" || label === "08:30")
+        ) {
           continue;
+        }
 
         const end =
           duration === 30
