@@ -1,4 +1,4 @@
-﻿// /app/book/BookingApp.tsx
+// /app/book/BookingApp.tsx
 "use client";
 
 import * as React from "react";
@@ -32,15 +32,15 @@ const THERAPISTS: Record<
   TherapistKey,
   { name: string; photo?: string; start?: string; end?: string }
 > = {
-  any: { name: "Р‘РµР· Р·РЅР°С‡РµРЅРёРµ" },
+  any: { name: "Без значение" },
   daniel: {
-    name: "Р”Р°РЅРёРµР» РњРёС‚РµРІ",
+    name: "Даниел Митев",
     photo: "/therapists/daniel.jpg",
     start: "13:00",
     end: "19:00",
   },
   elitsa: {
-    name: "Р•Р»РёС†Р° РљРѕР»РµРІР°",
+    name: "Елица Колева",
     photo: "/therapists/elitsa.jpg",
     start: "09:00",
     end: "13:00",
@@ -56,25 +56,25 @@ function ymd(d: Date) {
 }
 
 export default function BookingApp() {
-  // Р±Р°Р·РѕРІРё СЃСЉСЃС‚РѕСЏРЅРёСЏ (РёРЅРёС†РёР°Р»РёР·РёСЂР° СЃРµ СЃР°РјРѕ РЅР° РєР»РёРµРЅС‚Р°)
+  // базови състояния (инициализира се само на клиента)
   const [date, setDate] = React.useState<Date | null>(null);
   const [duration, setDuration] = React.useState<30 | 60 | 90>(60);
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
 
-  // С‚РµСЂР°РїРµРІС‚
+  // терапевт
   const [therapist, setTherapist] = React.useState<TherapistKey>("any");
 
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [successText, setSuccessText] = React.useState<string | null>(null);
 
-  // Р»РѕРіРёРєР° 60/90
+  // логика 60/90
   const [hourAvailable, setHourAvailable] = React.useState(true);
   const [ninetyAvailable, setNinetyAvailable] = React.useState(true);
   const [note, setNote] = React.useState<string | null>(null);
 
-  // С„РѕСЂРјР°
+  // форма
   const [form, setForm] = React.useState<FormData>({
     firstName: "",
     lastName: "",
@@ -84,7 +84,7 @@ export default function BookingApp() {
     symptoms: "",
   });
 
-  // СЃРєСЂРѕР»
+  // скрол
   const listRef = React.useRef<HTMLDivElement>(null);
   const formSectionRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -97,7 +97,7 @@ export default function BookingApp() {
     setClientTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
 
-  // РёРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РЅР° РґР°С‚Р°С‚Р° СЃР°РјРѕ РЅР° РєР»РёРµРЅС‚Р°
+  // инициализация на датата само на клиента
   React.useEffect(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -114,7 +114,7 @@ export default function BookingApp() {
     setDuration(d);
   };
 
-  // Р·Р°СЂРµР¶РґР°РЅРµ РЅР° СЃР»РѕС‚РѕРІРµС‚Рµ (РІРєР». therapist)
+  // зареждане на слотовете (вкл. therapist)
   const load = React.useCallback(async () => {
     if (!date) return;
     setLoading(true);
@@ -134,11 +134,11 @@ export default function BookingApp() {
       if (duration === 60) {
         const anyHour = list.some((s) => s.available);
         setHourAvailable(anyHour);
-        if (!anyHour) setNote("РќСЏРјР° СЃРІРѕР±РѕРґРµРЅ 60-РјРёРЅ РёРЅС‚РµСЂРІР°Р» Р·Р° С‚Р°Р·Рё РґР°С‚Р°.");
+        if (!anyHour) setNote("Няма свободен 60-мин интервал за тази дата.");
       } else if (duration === 90) {
         const any90 = list.some((s) => s.available);
         setNinetyAvailable(any90);
-        if (!any90) setNote("РќСЏРјР° СЃРІРѕР±РѕРґРµРЅ 90-РјРёРЅ РёРЅС‚РµСЂРІР°Р» Р·Р° С‚Р°Р·Рё РґР°С‚Р°.");
+        if (!any90) setNote("Няма свободен 90-мин интервал за тази дата.");
       } else {
         setHourAvailable(true);
         setNinetyAvailable(true);
@@ -147,7 +147,7 @@ export default function BookingApp() {
       setSlots(list);
     } catch (e: unknown) {
       setSlots([]);
-      setError(e instanceof Error ? e.message : "Р“СЂРµС€РєР° РїСЂРё Р·Р°СЂРµР¶РґР°РЅРµ.");
+      setError(e instanceof Error ? e.message : "Грешка при зареждане.");
     } finally {
       setLoading(false);
     }
@@ -166,7 +166,7 @@ export default function BookingApp() {
     setNote(null);
   }, [date, therapist]);
 
-  // РїР»Р°РІРµРЅ СЃРєСЂРѕР» РєСЉРј С„РѕСЂРјР°С‚Р°
+  // плавен скрол към формата
   React.useEffect(() => {
     if (!selectedTime || !formSectionRef.current) return;
     document.body.classList.remove("tb-no-scroll");
@@ -185,7 +185,7 @@ export default function BookingApp() {
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!selectedTime || !date) {
-      setError("РњРѕР»СЏ, РёР·Р±РµСЂРµС‚Рµ С‡Р°СЃ.");
+      setError("Моля, изберете час.");
       return;
     }
     setLoading(true);
@@ -196,7 +196,7 @@ export default function BookingApp() {
         date: ymd(date),
         time: selectedTime,
         duration,
-        therapist, // в†ђ РєСЉРј API
+        therapist, // ← към API
         ...form,
       };
       const res = await fetch("/api/book", {
@@ -216,10 +216,10 @@ export default function BookingApp() {
         );
       }
       if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || `Р“СЂРµС€РєР° РїСЂРё Р·Р°РїРёСЃ (HTTP ${res.status}).`);
+        throw new Error(data?.error || `Грешка при запис (HTTP ${res.status}).`);
       }
 
-      // СѓСЃРїРµС…
+      // успех
       const [h, m] = selectedTime.split(":").map((n) => Number(n));
       const start = new Date(date);
       start.setHours(h, m, 0, 0);
@@ -231,10 +231,10 @@ export default function BookingApp() {
       const tName = THERAPISTS[therapist].name;
 
       setSuccessText(
-        `РЈСЃРїРµС€РЅРѕ Р·Р°РїР°Р·РёС…С‚Рµ С‡Р°СЃ! ${fmtDateHeader(
+        `Успешно запазихте час! ${fmtDateHeader(
           date
-        )} вЂў ${toHHMM(start)}вЂ“${toHHMM(end)} (${duration} РјРёРЅ)` +
-          (therapist !== "any" ? ` вЂў РўРµСЂР°РїРµРІС‚: ${tName}` : "")
+        )} • ${toHHMM(start)}–${toHHMM(end)} (${duration} мин)` +
+          (therapist !== "any" ? ` • Терапевт: ${tName}` : "")
       );
 
       setSelectedTime(null);
@@ -247,13 +247,13 @@ export default function BookingApp() {
         symptoms: "",
       });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Р“СЂРµС€РєР° РїСЂРё Р·Р°РїРёСЃ.");
+      setError(e instanceof Error ? e.message : "Грешка при запис.");
     } finally {
       setLoading(false);
     }
   }
 
-  // --- РџРѕС‚РІСЉСЂР¶РґРµРЅРёРµ ---
+  // --- Потвърждение ---
   if (successText) {
     return (
       <div className="min-h-screen bg-white">
@@ -261,16 +261,16 @@ export default function BookingApp() {
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 shadow-sm">
             <div className="px-6 py-6">
               <h2 className="text-xl font-semibold text-emerald-800 mb-2">
-                РџРѕС‚РІСЉСЂР¶РґРµРЅРёРµ
+                Потвърждение
               </h2>
               <div className="text-emerald-900">{successText}</div>
 
               <div className="mt-4 rounded-lg border border-emerald-200 bg-white/70 p-4 text-emerald-900">
                 <div>
-                  <strong>РђРґСЂРµСЃ:</strong> РЎРѕС„РёСЏ, СѓР». РџСЂРѕС„. РҐСЂРёСЃС‚Рѕ Р”Р°РЅРѕРІ 19
+                  <strong>Адрес:</strong> София, ул. Проф. Христо Данов 19
                 </div>
                 <div>
-                  <strong>РўРµР»РµС„РѕРЅ:</strong>{" "}
+                  <strong>Телефон:</strong>{" "}
                   <a
                     href="tel:0883688414"
                     className="underline decoration-emerald-500 hover:opacity-80"
@@ -285,7 +285,7 @@ export default function BookingApp() {
                   href="https://dmphysi0.com"
                   className="inline-flex h-10 items-center rounded-lg bg-emerald-600 px-4 text-white hover:bg-emerald-700"
                 >
-                  РќР°Р·Р°Рґ РєСЉРј СЃР°Р№С‚Р°
+                  Назад към сайта
                 </Link>
               </div>
             </div>
@@ -305,18 +305,17 @@ export default function BookingApp() {
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-6xl px-4 py-8">
-        {/* Р Р•Р”: РљР°Р»РµРЅРґР°СЂ + Р§Р°СЃРѕРІРµ */}
+        {/* РЕД: Календар + Часове */}
         <div className="flex flex-col md:flex-row gap-4 items-stretch">
-          {/* РљРђР›Р•РќР”РђР  вЂ“ РіРѕР»СЏРј РїР°РЅРµР» */}
+          {/* КАЛЕНДАР – голям панел */}
           <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="p-4 flex-1">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
-                Р—Р°РїР°Р·РµС‚Рµ С‡Р°СЃ РєР°С‚Рѕ РёР·Р±РµСЂРµС‚Рµ РґР°С‚Р° Рё С‡Р°СЃ
+                Запазете час като изберете дата и час
               </h2>
 
               {date && <Calendar value={date} onChange={setDate} />}
 
-              {/* рџ”Ѕ РџР РћР—РћР Р•Р¦: РР·Р±РµСЂРµС‚Рµ С‚РµСЂР°РїРµРІС‚ */}
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200">
                   <h3 className="m-0 text-base font-semibold text-slate-900">
@@ -398,6 +397,8 @@ export default function BookingApp() {
                   </div>
                 )}
               </div>
+
+              {/* ред: локация */}
               <div
                 className="mt-4 flex items-center gap-2 text-xs text-slate-600"
                 suppressHydrationWarning
@@ -408,7 +409,7 @@ export default function BookingApp() {
             </div>
           </div>
 
-          {/* Р§РђРЎРћР’Р• вЂ“ С‚РµСЃРµРЅ РїР°РЅРµР» */}
+          {/* ЧАСОВЕ – тесен панел */}
           <div className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
             <div className="px-4 pt-4">
               <div
@@ -420,7 +421,7 @@ export default function BookingApp() {
               <div className="mt-2 flex items-center justify-between">
                 <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  РќР°Р»РёС‡РЅРё С‡Р°СЃРѕРІРµ
+                  Налични часове
                 </div>
 
                 {/* Segmented control 30/60/90 */}
@@ -434,7 +435,7 @@ export default function BookingApp() {
                     }`}
                     aria-pressed={duration === 30}
                   >
-                    30 РјРёРЅ
+                    30 мин
                   </button>
 
                   <button
@@ -447,12 +448,12 @@ export default function BookingApp() {
                     } ${!hourAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     title={
                       !hourAvailable
-                        ? "РќСЏРјР° СЃРІРѕР±РѕРґРµРЅ 60-РјРёРЅ РёРЅС‚РµСЂРІР°Р» Р·Р° С‚Р°Р·Рё РґР°С‚Р°"
+                        ? "Няма свободен 60-мин интервал за тази дата"
                         : ""
                     }
                     aria-pressed={duration === 60}
                   >
-                    60 РјРёРЅ
+                    60 мин
                   </button>
 
                   <button
@@ -465,12 +466,12 @@ export default function BookingApp() {
                     } ${!ninetyAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     title={
                       !ninetyAvailable
-                        ? "РќСЏРјР° СЃРІРѕР±РѕРґРµРЅ 90-РјРёРЅ РёРЅС‚РµСЂРІР°Р» Р·Р° С‚Р°Р·Рё РґР°С‚Р°"
+                        ? "Няма свободен 90-мин интервал за тази дата"
                         : ""
                     }
                     aria-pressed={duration === 90}
                   >
-                    90 РјРёРЅ
+                    90 мин
                   </button>
                 </div>
               </div>
@@ -478,13 +479,13 @@ export default function BookingApp() {
               {note && <div className="mt-2 text-xs text-slate-500">{note}</div>}
             </div>
 
-            {/* РЎРїРёСЃСЉРє СЃ С‡Р°СЃРѕРІРµ */}
+            {/* Списък с часове */}
             <div className="mt-3 p-4 pt-2 flex-1 min-h-0">
               {loading ? (
-                <div className="text-sm text-slate-600">Р—Р°СЂРµР¶РґР°РЅРµвЂ¦</div>
+                <div className="text-sm text-slate-600">Зареждане…</div>
               ) : slots.length === 0 ? (
                 <div className="text-sm text-slate-500">
-                  РќСЏРјР° СЃРІРѕР±РѕРґРЅРё С‡Р°СЃРѕРІРµ Р·Р° С‚РѕР·Рё РґРµРЅ.
+                  Няма свободни часове за този ден.
                 </div>
               ) : (
                 <div
@@ -535,7 +536,7 @@ export default function BookingApp() {
                               selected ? "text-blue-100" : "text-blue-600"
                             }`}
                           >
-                            Р·Р°РїР°Р·Рё
+                            запази
                           </span>
                         </button>
                       );
@@ -547,23 +548,23 @@ export default function BookingApp() {
           </div>
         </div>
 
-        {/* РљРћРўР’Рђ Р·Р° СЃРєСЂРѕР» РєСЉРј С„РѕСЂРјР°С‚Р° */}
+        {/* КОТВА за скрол към формата */}
         <div
           ref={formSectionRef}
           className="h-px"
           style={{ scrollMarginTop: "calc(var(--tb-h, 64px) + 10px)" }}
         />
 
-        {/* Р¤РћР РњРђ */}
+        {/* ФОРМА */}
         {selectedTime && (
           <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200">
               <h2 className="text-center text-[22px] font-semibold text-slate-900">
-                РџРѕРїСЉР»РЅРµС‚Рµ С„РѕСЂРјР°С‚Р°, Р·Р° РґР° Р·Р°РїР°Р·РёС‚Рµ С‡Р°СЃ
+                Попълнете формата, за да запазите час
               </h2>
               <div className="mt-2 text-center text-sm text-slate-600">
-                {date ? fmtDateHeader(date) : ""} вЂў {selectedTime} вЂў {duration}{" "}
-                РјРёРЅ {therapist !== "any" ? `вЂў ${t.name}` : ""}
+                {date ? fmtDateHeader(date) : ""} • {selectedTime} • {duration}{" "}
+                мин {therapist !== "any" ? `• ${t.name}` : ""}
               </div>
             </div>
 
@@ -573,11 +574,11 @@ export default function BookingApp() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    РРјРµ
+                    Име
                   </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Р’Р°С€РµС‚Рѕ РёРјРµ"
+                    placeholder="Вашето име"
                     required
                     value={form.firstName}
                     onChange={(e) =>
@@ -587,11 +588,11 @@ export default function BookingApp() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Р¤Р°РјРёР»РёСЏ
+                    Фамилия
                   </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Р’Р°С€Р°С‚Р° С„Р°РјРёР»РёСЏ"
+                    placeholder="Вашата фамилия"
                     required
                     value={form.lastName}
                     onChange={(e) =>
@@ -604,7 +605,7 @@ export default function BookingApp() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text_sm font-medium text-slate-700 mb-1">
-                    РўРµР»РµС„РѕРЅ
+                    Телефон
                   </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -618,11 +619,11 @@ export default function BookingApp() {
                 </div>
                 <div>
                   <label className="block text_sm font-medium text-slate-700 mb-1">
-                    РџСЂРѕС†РµРґСѓСЂР°
+                    Процедура
                   </label>
                   <input
                     className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="РџСЂРѕС†РµРґСѓСЂР° / СѓСЃР»СѓРіР°"
+                    placeholder="Процедура / услуга"
                     required
                     value={form.procedure}
                     onChange={(e) =>
@@ -634,7 +635,7 @@ export default function BookingApp() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  РРјРµР№Р»
+                  Имейл
                 </label>
                 <input
                   type="email"
@@ -648,11 +649,11 @@ export default function BookingApp() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  РћРїРёС€РµС‚Рµ СЃРёРјРїС‚РѕРјРёС‚Рµ СЃРё
+                  Опишете симптомите си
                 </label>
                 <textarea
                   className="w-full min-h-[140px] rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="РћРїРёС€РµС‚Рµ Р±РѕР»РєР°С‚Р°, РјРµСЃС‚РѕРїРѕР»РѕР¶РµРЅРёРµ/СЂР°Р·РїСЂРѕСЃС‚СЂР°РЅРµРЅРёРµ, РѕС‚ РєРѕРіР°, РєРѕРµ СѓСЃРёР»РІР°/РѕР±Р»РµРєС‡Р°РІР°, РїСЂРµРґРёС€РЅРё С‚СЂР°РІРјРё/РёР·СЃР»РµРґРІР°РЅРёСЏ, С†РµР»вЂ¦"
+                  placeholder="Опишете болката, местоположение/разпространение, от кога, кое усилва/облекчава, предишни травми/изследвания, цел…"
                   value={form.symptoms || ""}
                   onChange={(e) =>
                     setForm({ ...form, symptoms: e.target.value })
@@ -668,14 +669,14 @@ export default function BookingApp() {
                   onClick={() => window.history.back()}
                   className="h-12 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
                 >
-                  РћС‚РєР°Р¶Рё
+                  Откажи
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
                   className="h-12 rounded-lg bg-gradient-to-r from-sky-500 to-emerald-500 text-white font-medium hover:opacity-95 disabled:opacity-60"
                 >
-                  {loading ? "РР·РїСЂР°С‰Р°РЅРµвЂ¦" : "Р—Р°РїР°Р·Рё"}
+                  {loading ? "Изпращане…" : "Запази"}
                 </button>
               </div>
             </form>
@@ -685,4 +686,3 @@ export default function BookingApp() {
     </div>
   );
 }
-
