@@ -1,6 +1,7 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getCalendar } from "@/app/lib/google";
 import { sendReviewRequestEmailSMTP } from "@/app/lib/email";
+import { isSmsConfigured, sendReviewRequestSMS } from "@/app/lib/sms";
 
 const DEFAULT_GMAPS_REVIEW_URL = "https://g.page/r/CW2mjx_ste2XEBM/review";
 const REVIEW_DEDUP_SINCE_ISO = "2026-03-18T00:00:00+02:00";
@@ -12,6 +13,8 @@ type ReviewPrivateProps = Record<string, string> & {
   customerFirstName?: string;
   customerLastName?: string;
   customerPhone?: string;
+  reviewSmsTo?: string;
+  reviewSmsSent?: string;
 };
 
 function getPrivateProps(ev: {
@@ -48,15 +51,67 @@ function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
+function normalizePhone(value: string) {
+  const raw = value.trim();
+  if (!raw) return "";
+
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (digits.startsWith("00359") && digits.length === 14) {
+    return `+359${digits.slice(5)}`;
+  }
+
+  if (digits.startsWith("359") && digits.length === 12) {
+    return `+${digits}`;
+  }
+
+  if (digits.startsWith("0") && digits.length === 10) {
+    return `+359${digits.slice(1)}`;
+  }
+
+  if (digits.length === 9 && digits.startsWith("8")) {
+    return `+359${digits}`;
+  }
+
+  return "";
+}
+
+function extractNormalizedPhones(text?: string | null) {
+  if (!text) return [];
+  const matches =
+    text.match(/(?:\+359|00359|0)\s*8\d(?:[\s\-()]*\d){7}/g) ?? [];
+
+  const normalized = new Set<string>();
+  for (const match of matches) {
+    const phone = normalizePhone(match);
+    if (phone) normalized.add(phone);
+  }
+
+  return [...normalized];
+}
+
 function extractEmailFromDescription(description?: string | null) {
   if (!description) return "";
   const match = description.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   return match ? match[0] : "";
 }
 
-function hasFifthProcedureMarker(firstName: string, summary?: string | null) {
-  const text = `${firstName || ""} ${summary || ""}`;
-  return /(^|[\s,;:()])\S*-5($|[\s,;:()])/u.test(text);
+function extractPhoneFromEvent(
+  priv: ReviewPrivateProps,
+  summary?: string | null,
+  description?: string | null
+) {
+  const direct = normalizePhone(priv.reviewSmsTo || priv.customerPhone || "");
+  if (direct) return direct;
+
+  const fromDescription = extractNormalizedPhones(description);
+  if (fromDescription.length > 0) return fromDescription[0];
+
+  const fromSummary = extractNormalizedPhones(summary);
+  if (fromSummary.length > 0) return fromSummary[0];
+
+  return "";
 }
 
 function isWebsiteBooking(
@@ -77,7 +132,7 @@ function deriveFirstName(
   if (fromMetadata) return fromMetadata;
 
   const firstToken = (summary || "").trim().split(/\s+/)[0] || "";
-  return firstToken.replace(/-5$/u, "").trim();
+  return firstToken.trim();
 }
 
 function getReviewDueAt(reviewDueAtISO: string | undefined, end: Date) {
@@ -119,12 +174,61 @@ async function collectAlreadySentEmails(
       const priv = getPrivateProps(ev);
       if (priv.reviewEmailSent !== "1") continue;
 
-      const email = normalizeEmail(priv.customerEmail || extractEmailFromDescription(ev.description));
+      const email = normalizeEmail(
+        priv.customerEmail || extractEmailFromDescription(ev.description)
+      );
       if (email) sentEmails.add(email);
     }
   } while (pageToken);
 
   return sentEmails;
+}
+
+async function collectAlreadySentPhones(
+  calendar: ReturnType<typeof getCalendar>,
+  monthsBack = 18
+) {
+  const now = new Date();
+  const past = new Date(now);
+  past.setMonth(now.getMonth() - monthsBack);
+
+  const dedupSince = new Date(REVIEW_DEDUP_SINCE_ISO);
+  const timeMin = past > dedupSince ? past.toISOString() : dedupSince.toISOString();
+
+  const sentPhones = new Set<string>();
+  let pageToken: string | undefined;
+
+  do {
+    const res = await calendar.events.list({
+      calendarId: process.env.BOOKING_CALENDAR_ID!,
+      timeMin,
+      timeMax: now.toISOString(),
+      singleEvents: true,
+      orderBy: "startTime",
+      pageToken,
+    });
+    pageToken = res.data.nextPageToken || undefined;
+
+    for (const ev of res.data.items || []) {
+      if (ev.status === "cancelled") continue;
+
+      const priv = getPrivateProps(ev);
+      if (priv.reviewSmsSent !== "1") continue;
+
+      const phone = extractPhoneFromEvent(priv, ev.summary, ev.description);
+      if (phone) sentPhones.add(phone);
+    }
+  } while (pageToken);
+
+  return sentPhones;
+}
+
+function serializePrivateProps(priv: ReviewPrivateProps) {
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(priv)) {
+    if (typeof value === "string") cleaned[key] = value;
+  }
+  return cleaned;
 }
 
 export const dynamic = "force-dynamic";
@@ -141,24 +245,32 @@ export async function GET(req: NextRequest) {
   const calendar = getCalendar();
   const now = new Date();
   const reviewUrl = DEFAULT_GMAPS_REVIEW_URL;
+  const smsReady = isSmsConfigured();
 
   const sentEmails = await collectAlreadySentEmails(calendar, 18);
+  const sentPhones = await collectAlreadySentPhones(calendar, 18);
 
-  // Look back 7 days so temporary cron outages do not miss review emails.
+  // Look back 7 days so temporary cron outages do not miss review follow-ups.
   const timeMin = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const timeMax = now.toISOString();
 
   let pageToken: string | undefined;
   let processed = 0;
-  let eligible = 0;
+  let eligibleEmail = 0;
   let mailed = 0;
-  let failed = 0;
+  let failedEmail = 0;
+  let eligibleSms = 0;
+  let smsSent = 0;
+  let failedSms = 0;
   let skippedMissingData = 0;
   let skippedNotDue = 0;
   let skippedAlreadySentByEmail = 0;
-  let skippedNotMatchingRules = 0;
-  let eligibleByWebsiteBooking = 0;
-  let eligibleByFifthMarker = 0;
+  let skippedAlreadySentByPhone = 0;
+  let skippedEmailMissing = 0;
+  let skippedSmsMissingPhone = 0;
+  let skippedSmsNotConfigured = 0;
+  let websiteEventsSeen = 0;
+  let nonWebsiteEventsSeen = 0;
 
   do {
     const res = await calendar.events.list({
@@ -181,18 +293,13 @@ export async function GET(req: NextRequest) {
       }
 
       const priv = getPrivateProps(ev);
-      const reviewEmailSent = priv.reviewEmailSent === "1";
+      const reviewEmailSentAlready = priv.reviewEmailSent === "1";
+      const reviewSmsSentAlready = priv.reviewSmsSent === "1";
       const firstName = deriveFirstName(priv.customerFirstName || "", ev.summary);
       const lastName = (priv.customerLastName || "").trim();
       const matchedWebsiteRule = isWebsiteBooking(priv, ev.description);
-      const matchedFifthRule = hasFifthProcedureMarker(firstName, ev.summary);
-
-      if (reviewEmailSent) continue;
-
-      if (!matchedWebsiteRule && !matchedFifthRule) {
-        skippedNotMatchingRules++;
-        continue;
-      }
+      if (matchedWebsiteRule) websiteEventsSeen++;
+      else nonWebsiteEventsSeen++;
 
       const endISO = ev.end?.dateTime || ev.end?.date;
       if (!endISO) {
@@ -212,97 +319,128 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      const customerEmail = normalizeEmail(priv.customerEmail || extractEmailFromDescription(ev.description));
-      if (!customerEmail) {
-        skippedMissingData++;
-        continue;
-      }
+      let privatePatch: ReviewPrivateProps = {
+        ...priv,
+        reviewDueAt: reviewDueAt.toISOString(),
+      };
+      let shouldPatch = false;
 
-      const reviewTrigger = matchedWebsiteRule
-        ? matchedFifthRule
-          ? "website-and-fifth-marker"
-          : "website-booking"
-        : "fifth-marker";
+      if (matchedWebsiteRule && !reviewEmailSentAlready) {
+        const customerEmail = normalizeEmail(
+          priv.customerEmail || extractEmailFromDescription(ev.description)
+        );
 
-      if (matchedWebsiteRule) {
-        eligibleByWebsiteBooking++;
-      } else {
-        eligibleByFifthMarker++;
-      }
-
-      if (sentEmails.has(customerEmail)) {
-        skippedAlreadySentByEmail++;
-
-        if (!dryRun) {
-          await calendar.events.patch({
-            calendarId: process.env.BOOKING_CALENDAR_ID!,
-            eventId: ev.id,
-            requestBody: {
-              extendedProperties: {
-                private: {
-                  ...priv,
-                  reviewEmailSent: "1",
-                  reviewEmailSkippedAt: new Date().toISOString(),
-                  reviewEmailSkipReason: "already-sent-by-email",
-                  reviewTrigger,
-                  reviewDueAt: reviewDueAt.toISOString(),
-                  customerEmail,
-                },
-              },
-            },
-          });
-        }
-
-        continue;
-      }
-
-      eligible++;
-      if (dryRun) continue;
-
-      try {
-        await sendReviewRequestEmailSMTP({
-          to: customerEmail,
-          firstName: firstName || "клиент",
-          lastName,
-          mapReviewUrl: reviewUrl,
-        });
-        mailed++;
-
-        await calendar.events.patch({
-          calendarId: process.env.BOOKING_CALENDAR_ID!,
-          eventId: ev.id,
-          requestBody: {
-            extendedProperties: {
-              private: {
-                ...priv,
+        if (!customerEmail) {
+          skippedEmailMissing++;
+        } else if (sentEmails.has(customerEmail)) {
+          skippedAlreadySentByEmail++;
+          privatePatch = {
+            ...privatePatch,
+            customerEmail,
+            reviewTrigger: "website-booking",
+            reviewEmailSent: "1",
+            reviewEmailSkippedAt: now.toISOString(),
+            reviewEmailSkipReason: "already-sent-by-email",
+          };
+          shouldPatch = true;
+        } else {
+          eligibleEmail++;
+          if (!dryRun) {
+            try {
+              await sendReviewRequestEmailSMTP({
+                to: customerEmail,
+                firstName: firstName || "клиент",
+                lastName,
+                mapReviewUrl: reviewUrl,
+              });
+              mailed++;
+              privatePatch = {
+                ...privatePatch,
                 customerEmail,
-                reviewTrigger,
-                reviewDueAt: reviewDueAt.toISOString(),
+                reviewTrigger: "website-booking",
                 reviewEmailSent: "1",
                 reviewEmailSentAt: new Date().toISOString(),
                 reviewEmailError: "",
-              },
-            },
-          },
-        });
+              };
+              shouldPatch = true;
+              sentEmails.add(customerEmail);
+            } catch (err: unknown) {
+              failedEmail++;
+              const message = err instanceof Error ? err.message : String(err);
+              privatePatch = {
+                ...privatePatch,
+                customerEmail,
+                reviewTrigger: "website-booking",
+                reviewEmailLastAttemptAt: new Date().toISOString(),
+                reviewEmailError: message.slice(0, 250),
+              };
+              shouldPatch = true;
+            }
+          }
+        }
+      }
 
-        sentEmails.add(customerEmail);
-      } catch (err: unknown) {
-        failed++;
-        const message = err instanceof Error ? err.message : String(err);
+      if (!matchedWebsiteRule && !reviewSmsSentAlready) {
+        const customerPhone = extractPhoneFromEvent(priv, ev.summary, ev.description);
+
+        if (!customerPhone) {
+          skippedSmsMissingPhone++;
+        } else if (sentPhones.has(customerPhone)) {
+          skippedAlreadySentByPhone++;
+          privatePatch = {
+            ...privatePatch,
+            reviewTrigger: "calendar-phone",
+            reviewSmsTo: customerPhone,
+            reviewSmsSent: "1",
+            reviewSmsSkippedAt: now.toISOString(),
+            reviewSmsSkipReason: "already-sent-by-phone",
+          };
+          shouldPatch = true;
+        } else if (!smsReady) {
+          skippedSmsNotConfigured++;
+        } else {
+          eligibleSms++;
+          if (!dryRun) {
+            try {
+              await sendReviewRequestSMS({
+                to: customerPhone,
+                firstName: firstName || "клиент",
+                mapReviewUrl: reviewUrl,
+              });
+              smsSent++;
+              privatePatch = {
+                ...privatePatch,
+                reviewTrigger: "calendar-phone",
+                reviewSmsTo: customerPhone,
+                reviewSmsSent: "1",
+                reviewSmsSentAt: new Date().toISOString(),
+                reviewSmsError: "",
+              };
+              shouldPatch = true;
+              sentPhones.add(customerPhone);
+            } catch (err: unknown) {
+              failedSms++;
+              const message = err instanceof Error ? err.message : String(err);
+              privatePatch = {
+                ...privatePatch,
+                reviewTrigger: "calendar-phone",
+                reviewSmsTo: customerPhone,
+                reviewSmsLastAttemptAt: new Date().toISOString(),
+                reviewSmsError: message.slice(0, 250),
+              };
+              shouldPatch = true;
+            }
+          }
+        }
+      }
+
+      if (!dryRun && shouldPatch) {
         await calendar.events.patch({
           calendarId: process.env.BOOKING_CALENDAR_ID!,
           eventId: ev.id,
           requestBody: {
             extendedProperties: {
-              private: {
-                ...priv,
-                customerEmail,
-                reviewTrigger,
-                reviewDueAt: reviewDueAt.toISOString(),
-                reviewEmailLastAttemptAt: new Date().toISOString(),
-                reviewEmailError: message.slice(0, 250),
-              },
+              private: serializePrivateProps(privatePatch),
             },
           },
         });
@@ -314,17 +452,25 @@ export async function GET(req: NextRequest) {
     ok: true,
     dryRun,
     processed,
-    eligible,
+    eligibleEmail,
     mailed,
-    failed,
+    failedEmail,
+    eligibleSms,
+    smsSent,
+    failedSms,
     skippedMissingData,
     skippedNotDue,
     skippedAlreadySentByEmail,
-    skippedNotMatchingRules,
-    eligibleByWebsiteBooking,
-    eligibleByFifthMarker,
+    skippedAlreadySentByPhone,
+    skippedEmailMissing,
+    skippedSmsMissingPhone,
+    skippedSmsNotConfigured,
+    websiteEventsSeen,
+    nonWebsiteEventsSeen,
     sentRecipientsEmails: sentEmails.size,
+    sentRecipientsPhones: sentPhones.size,
     dedupeSince: REVIEW_DEDUP_SINCE_ISO,
+    smsConfigured: smsReady,
     reviewUrl,
     window: { timeMin, timeMax },
   });
