@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCalendar } from "@/app/lib/google";
+import { getSheets } from "@/app/lib/google";
 import { sendReviewRequestEmailSMTP } from "@/app/lib/email";
 import { isSmsConfigured, sendReviewRequestSMS } from "@/app/lib/sms";
 
 const DEFAULT_GMAPS_REVIEW_URL = "https://g.page/r/CW2mjx_ste2XEBM/review";
 const REVIEW_DEDUP_SINCE_ISO = "2026-03-18T00:00:00+02:00";
+const REVIEW_SMS_SHEET_TAB = "Имена и тел";
 
 type ReviewPrivateProps = Record<string, string> & {
   reviewDueAt?: string;
@@ -223,6 +225,88 @@ async function collectAlreadySentPhones(
   return sentPhones;
 }
 
+async function ensureReviewSmsSheet(
+  sheets: ReturnType<typeof getSheets>,
+  spreadsheetId: string,
+  tabName: string
+) {
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+  const hasTab = (spreadsheet.data.sheets || []).some(
+    (s) => s.properties?.title === tabName
+  );
+
+  if (!hasTab) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: tabName } } }],
+      },
+    });
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${tabName}!A1`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [["timestamp", "name", "phone", "source", "eventId"]],
+      },
+    });
+  }
+}
+
+async function collectAlreadySentPhonesFromSheet(
+  sheets: ReturnType<typeof getSheets>,
+  spreadsheetId: string,
+  tabName: string
+) {
+  const sent = new Set<string>();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${tabName}!A2:E`,
+    });
+
+    for (const row of res.data.values || []) {
+      const rawPhone = row[2] || row[1] || "";
+      const phone = normalizePhone(rawPhone);
+      if (phone) sent.add(phone);
+    }
+  } catch {
+    // The tab may not exist yet; it will be created lazily when needed.
+  }
+
+  return sent;
+}
+
+async function appendSmsLogToSheet(args: {
+  sheets: ReturnType<typeof getSheets>;
+  spreadsheetId: string;
+  tabName: string;
+  name: string;
+  phone: string;
+  source: string;
+  eventId?: string;
+}) {
+  await args.sheets.spreadsheets.values.append({
+    spreadsheetId: args.spreadsheetId,
+    range: `${args.tabName}!A1`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [
+        [
+          new Date().toISOString(),
+          args.name,
+          args.phone,
+          args.source,
+          args.eventId || "",
+        ],
+      ],
+    },
+  });
+}
+
 function serializePrivateProps(priv: ReviewPrivateProps) {
   const cleaned: Record<string, string> = {};
   for (const [key, value] of Object.entries(priv)) {
@@ -241,14 +325,80 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const dryRun = parseBool(url.searchParams.get("dryRun"));
+  const testSms = parseBool(url.searchParams.get("testSms"));
+  const tabName = process.env.REVIEW_SMS_SHEET_TAB || REVIEW_SMS_SHEET_TAB;
+  const spreadsheetId = process.env.SHEETS_SPREADSHEET_ID || "";
 
   const calendar = getCalendar();
+  const sheets = getSheets();
   const now = new Date();
   const reviewUrl = DEFAULT_GMAPS_REVIEW_URL;
   const smsReady = isSmsConfigured();
 
+  if (spreadsheetId) {
+    await ensureReviewSmsSheet(sheets, spreadsheetId, tabName);
+  }
+
+  if (testSms) {
+    if (!smsReady) {
+      return NextResponse.json(
+        { ok: false, error: "SMS not configured in environment" },
+        { status: 400 }
+      );
+    }
+    if (!spreadsheetId) {
+      return NextResponse.json(
+        { ok: false, error: "Missing SHEETS_SPREADSHEET_ID" },
+        { status: 400 }
+      );
+    }
+
+    const rawPhone = url.searchParams.get("testPhone") || "";
+    const firstName = (url.searchParams.get("testName") || "Тест Клиент").trim();
+    const normalizedPhone = normalizePhone(rawPhone);
+
+    if (!normalizedPhone) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid testPhone format" },
+        { status: 400 }
+      );
+    }
+
+    const smsResult = await sendReviewRequestSMS({
+      to: normalizedPhone,
+      firstName,
+      mapReviewUrl: reviewUrl,
+    });
+
+    await appendSmsLogToSheet({
+      sheets,
+      spreadsheetId,
+      tabName,
+      name: firstName,
+      phone: normalizedPhone,
+      source: "manual-test",
+    });
+
+    return NextResponse.json({
+      ok: true,
+      mode: "testSms",
+      testName: firstName,
+      testPhone: normalizedPhone,
+      sid: smsResult.sid || "",
+      sheetTab: tabName,
+    });
+  }
+
   const sentEmails = await collectAlreadySentEmails(calendar, 18);
   const sentPhones = await collectAlreadySentPhones(calendar, 18);
+  if (spreadsheetId) {
+    const sentPhonesFromSheet = await collectAlreadySentPhonesFromSheet(
+      sheets,
+      spreadsheetId,
+      tabName
+    );
+    for (const phone of sentPhonesFromSheet) sentPhones.add(phone);
+  }
 
   // Look back 7 days so temporary cron outages do not miss review follow-ups.
   const timeMin = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -271,6 +421,7 @@ export async function GET(req: NextRequest) {
   let skippedSmsNotConfigured = 0;
   let websiteEventsSeen = 0;
   let nonWebsiteEventsSeen = 0;
+  let smsSheetWrites = 0;
 
   do {
     const res = await calendar.events.list({
@@ -408,6 +559,18 @@ export async function GET(req: NextRequest) {
                 mapReviewUrl: reviewUrl,
               });
               smsSent++;
+              if (spreadsheetId) {
+                await appendSmsLogToSheet({
+                  sheets,
+                  spreadsheetId,
+                  tabName,
+                  name: `${firstName || "клиент"} ${lastName}`.trim(),
+                  phone: customerPhone,
+                  source: "calendar-followup",
+                  eventId: ev.id,
+                });
+                smsSheetWrites++;
+              }
               privatePatch = {
                 ...privatePatch,
                 reviewTrigger: "calendar-phone",
@@ -467,6 +630,7 @@ export async function GET(req: NextRequest) {
     skippedSmsNotConfigured,
     websiteEventsSeen,
     nonWebsiteEventsSeen,
+    smsSheetWrites,
     sentRecipientsEmails: sentEmails.size,
     sentRecipientsPhones: sentPhones.size,
     dedupeSince: REVIEW_DEDUP_SINCE_ISO,
