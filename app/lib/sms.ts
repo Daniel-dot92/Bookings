@@ -5,10 +5,15 @@ type ReviewSmsProps = {
 };
 
 export function isSmsConfigured() {
+  const hasAuth =
+    Boolean(process.env.TWILIO_ACCOUNT_SID) &&
+    Boolean(process.env.TWILIO_AUTH_TOKEN);
+  const hasSender =
+    Boolean(process.env.TWILIO_FROM) ||
+    Boolean(process.env.TWILIO_MESSAGING_SERVICE_SID);
+
   return Boolean(
-    process.env.TWILIO_ACCOUNT_SID &&
-      process.env.TWILIO_AUTH_TOKEN &&
-      process.env.TWILIO_FROM
+    hasAuth && hasSender
   );
 }
 
@@ -16,9 +21,12 @@ export async function sendReviewRequestSMS(p: ReviewSmsProps) {
   const accountSid = (process.env.TWILIO_ACCOUNT_SID || "").trim();
   const authToken = (process.env.TWILIO_AUTH_TOKEN || "").trim();
   const from = (process.env.TWILIO_FROM || "").trim();
+  const messagingServiceSid = (process.env.TWILIO_MESSAGING_SERVICE_SID || "").trim();
 
-  if (!accountSid || !authToken || !from) {
-    throw new Error("Missing Twilio configuration (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN/TWILIO_FROM)");
+  if (!accountSid || !authToken || (!from && !messagingServiceSid)) {
+    throw new Error(
+      "Missing Twilio configuration (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN and TWILIO_FROM or TWILIO_MESSAGING_SERVICE_SID)"
+    );
   }
 
   const firstName = p.firstName.trim() || "клиент";
@@ -26,9 +34,13 @@ export async function sendReviewRequestSMS(p: ReviewSmsProps) {
 
   const body = new URLSearchParams({
     To: p.to,
-    From: from,
     Body: message,
   });
+  if (messagingServiceSid) {
+    body.set("MessagingServiceSid", messagingServiceSid);
+  } else {
+    body.set("From", from);
+  }
 
   const token = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
   const response = await fetch(
