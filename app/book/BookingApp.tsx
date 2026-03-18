@@ -353,6 +353,10 @@ export default function BookingApp() {
   if (!date) {
     return <div className="min-h-screen bg-white" />;
   }
+  const selectedDateLabel = new Intl.DateTimeFormat("bg-BG", {
+    day: "numeric",
+    month: "long",
+  }).format(date);
 
   return (
     <div className="min-h-screen bg-white">
@@ -384,10 +388,10 @@ export default function BookingApp() {
                     const item = THERAPISTS[key];
                     const firstFree = firstFreeByTherapist[key];
                     const firstFreeLabel = firstFreeLoading
-                      ? "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0437\u0430 \u0441\u0432\u043e\u0431\u043e\u0434\u0435\u043d \u0447\u0430\u0441..."
+                      ? `\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0437\u0430 \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u0438 \u0447\u0430\u0441\u043e\u0432\u0435 \u043d\u0430 ${selectedDateLabel}...`
                       : firstFree
-                      ? `\u041f\u044a\u0440\u0432\u0438 \u0441\u0432\u043e\u0431\u043e\u0434\u0435\u043d: ${firstFree}`
-                      : "\u041d\u044f\u043c\u0430 \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u0438 \u0447\u0430\u0441\u043e\u0432\u0435";
+                      ? `\u041f\u044a\u0440\u0432\u0438 \u0441\u0432\u043e\u0431\u043e\u0434\u0435\u043d: ${firstFree} \u043d\u0430 ${selectedDateLabel}`
+                      : `\u041d\u044f\u043c\u0430 \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u0438 \u0447\u0430\u0441\u043e\u0432\u0435 \u043d\u0430 ${selectedDateLabel}`;
                     const subtitle =
                       key === "any"
                         ? "Избор по наличност"
