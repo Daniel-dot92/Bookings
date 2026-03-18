@@ -27,7 +27,7 @@ type Payload = {
 // Работно време
 const SHIFT = {
   daniel: { START: "13:00", END: "19:00" },
-  elitsa: { START: "09:00", END: "13:00" },
+  elitsa: { START: "08:00", END: "13:00" },
 };
 const MIN_LEAD_TIME_MINUTES = 120;
 
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Часът е извън работното време на Даниел (13:00–19:00)." }, { status: 400 });
 
     if (therapist === "elitsa" && !within(time, SHIFT.elitsa.START, SHIFT.elitsa.END))
-      return NextResponse.json({ ok: false, error: "Часът е извън работното време на Елица (09:00–13:00)." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Часът е извън работното време на Елица (08:00–13:00)." }, { status: 400 });
 
     // 🕒 Дати и формати
     const tzid = "Europe/Sofia";

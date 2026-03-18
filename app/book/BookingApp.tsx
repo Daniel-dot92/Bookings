@@ -42,9 +42,18 @@ const THERAPISTS: Record<
   elitsa: {
     name: "Елица Колева",
     photo: "/therapists/elitsa.jpg",
-    start: "09:00",
+    start: "08:00",
     end: "13:00",
   },
+};
+
+type FirstFreeMap = Record<TherapistKey, string | null>;
+
+const NO_60_MIN_NOTE = "\u041d\u044f\u043c\u0430 \u0441\u0432\u043e\u0431\u043e\u0434\u0435\u043d 60-\u043c\u0438\u043d \u0438\u043d\u0442\u0435\u0440\u0432\u0430\u043b \u0437\u0430 \u0442\u0430\u0437\u0438 \u0434\u0430\u0442\u0430.";
+const EMPTY_FIRST_FREE: FirstFreeMap = {
+  any: null,
+  daniel: null,
+  elitsa: null,
 };
 
 // helpers
@@ -73,6 +82,9 @@ export default function BookingApp() {
   const [hourAvailable, setHourAvailable] = React.useState(true);
   const [ninetyAvailable, setNinetyAvailable] = React.useState(true);
   const [note, setNote] = React.useState<string | null>(null);
+  const [firstFreeByTherapist, setFirstFreeByTherapist] =
+    React.useState<FirstFreeMap>(EMPTY_FIRST_FREE);
+  const [firstFreeLoading, setFirstFreeLoading] = React.useState(false);
 
   // форма
   const [form, setForm] = React.useState<FormData>({
@@ -134,7 +146,7 @@ export default function BookingApp() {
       if (duration === 60) {
         const anyHour = list.some((s) => s.available);
         setHourAvailable(anyHour);
-        if (!anyHour) setNote("Няма свободен 60-мин интервал за тази дата.");
+        if (!anyHour) setNote(NO_60_MIN_NOTE);
       } else if (duration === 90) {
         const any90 = list.some((s) => s.available);
         setNinetyAvailable(any90);
@@ -153,9 +165,48 @@ export default function BookingApp() {
     }
   }, [date, duration, therapist]);
 
+  const loadFirstFreeByTherapist = React.useCallback(async () => {
+    if (!date) return;
+
+    const d = ymd(date);
+    const keys: TherapistKey[] = ["any", "daniel", "elitsa"];
+    setFirstFreeLoading(true);
+
+    try {
+      const responses = await Promise.all(
+        keys.map(async (key) => {
+          const res = await fetch(
+            `/api/availability?date=${d}&duration=${duration}&therapist=${key}`,
+            { cache: "no-store" }
+          );
+          if (!res.ok) return [key, null] as const;
+
+          const json = (await res.json()) as { slots?: Slot[] };
+          const list = Array.isArray(json.slots) ? json.slots : [];
+          const first = list.find((s) => s.available)?.time ?? null;
+          return [key, first] as const;
+        })
+      );
+
+      const next: FirstFreeMap = { ...EMPTY_FIRST_FREE };
+      responses.forEach(([key, value]) => {
+        next[key] = value;
+      });
+      setFirstFreeByTherapist(next);
+    } catch {
+      setFirstFreeByTherapist({ ...EMPTY_FIRST_FREE });
+    } finally {
+      setFirstFreeLoading(false);
+    }
+  }, [date, duration]);
+
   React.useEffect(() => {
     if (date) void load();
   }, [date, load]);
+
+  React.useEffect(() => {
+    if (date) void loadFirstFreeByTherapist();
+  }, [date, loadFirstFreeByTherapist]);
 
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
@@ -297,6 +348,7 @@ export default function BookingApp() {
   // ----------------------
 
   const t = THERAPISTS[therapist];
+  const isNoSixtyMinuteNote = Boolean(note && note.includes("60-"));
 
   if (!date) {
     return <div className="min-h-screen bg-white" />;
@@ -330,6 +382,12 @@ export default function BookingApp() {
                   {(["any", "daniel", "elitsa"] as TherapistKey[]).map((key) => {
                     const active = therapist === key;
                     const item = THERAPISTS[key];
+                    const firstFree = firstFreeByTherapist[key];
+                    const firstFreeLabel = firstFreeLoading
+                      ? "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0437\u0430 \u0441\u0432\u043e\u0431\u043e\u0434\u0435\u043d \u0447\u0430\u0441..."
+                      : firstFree
+                      ? `\u041f\u044a\u0440\u0432\u0438 \u0441\u0432\u043e\u0431\u043e\u0434\u0435\u043d: ${firstFree}`
+                      : "\u041d\u044f\u043c\u0430 \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u0438 \u0447\u0430\u0441\u043e\u0432\u0435";
                     const subtitle =
                       key === "any"
                         ? "Избор по наличност"
@@ -380,6 +438,15 @@ export default function BookingApp() {
                             </div>
                             <div className="mt-0.5 text-xs text-slate-600">
                               {subtitle}
+                            </div>
+                            <div
+                              className={`mt-1 text-[11px] ${
+                                !firstFreeLoading && !firstFree
+                                  ? "text-red-600 font-semibold"
+                                  : "text-slate-600"
+                              }`}
+                            >
+                              {firstFreeLabel}
                             </div>
                           </div>
                         </div>
@@ -476,7 +543,13 @@ export default function BookingApp() {
                 </div>
               </div>
 
-              {note && <div className="mt-2 text-xs text-slate-500">{note}</div>}
+              {note && (
+                <div
+                  className={`mt-2 text-xs ${isNoSixtyMinuteNote ? "text-red-600 font-semibold" : "text-slate-500"}`}
+                >
+                  {note}
+                </div>
+              )}
             </div>
 
             {/* Списък с часове */}

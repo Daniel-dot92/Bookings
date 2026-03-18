@@ -21,13 +21,13 @@ function ymdInSofia(d: Date) {
 // Делнични (Mon–Fri)
 const WEEKDAY_SHIFT = {
   daniel: { START: "13:00", END: "19:00" },
-  elitsa: { START: "09:00", END: "13:00" },
+  elitsa: { START: "08:00", END: "13:00" },
 } as const;
 
 // Събота
 const SAT_SHIFT = {
   daniel: { START: "13:00", END: "16:00" },
-  elitsa: { START: "09:00", END: "13:00" },
+  elitsa: { START: "08:00", END: "13:00" },
 } as const;
 
 export async function GET(req: NextRequest) {
