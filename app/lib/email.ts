@@ -35,53 +35,55 @@ function esc(s: string) {
     .replace(/>/g, "&gt;");
 }
 
-/** HTML С€Р°Р±Р»РѕРЅ РЅР° РёРјРµР№Р»Р° */
+/** HTML шаблон на имейла */
 function buildEmailHTML(p: BookingEmailProps) {
-  const address = p.address ?? "РЎРѕС„РёСЏ, СѓР». РџСЂРѕС„. РҐСЂРёСЃС‚Рѕ Р”Р°РЅРѕРІ 19";
+  const address = p.address ?? "София, ул. Проф. Христо Данов 19";
 
   const therapistLine = p.therapist
-    ? `<p style="margin:0"><strong>РўРµСЂР°РїРµРІС‚:</strong> ${esc(p.therapist)}</p>`
+    ? `<p style="margin:0"><strong>Терапевт:</strong> ${esc(p.therapist)}</p>`
     : "";
   const notesLine = p.notes
-    ? `<p style="margin:0"><strong>РЎРёРјРїС‚РѕРјРё/Р±РµР»РµР¶РєРё:</strong> ${esc(p.notes)}</p>`
+    ? `<p style="margin:0"><strong>Симптоми/бележки:</strong> ${esc(p.notes)}</p>`
     : "";
 
-  const extraHtml = p.extraHtml ? `<div style="margin-top:12px">${p.extraHtml}</div>` : "";
+  const extraHtml = p.extraHtml
+    ? `<div style="margin-top:12px">${p.extraHtml}</div>`
+    : "";
 
   return `<!doctype html>
 <html>
   <body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
                color:#0f172a;background-color:#ffffff;margin:0;padding:20px;">
     <div style="max-width:600px;margin:auto;">
-      <h2 style="margin:0 0 8px 0;color:#111827;">РџРѕС‚РІСЉСЂР¶РґРµРЅРёРµ Р·Р° С‡Р°СЃ</h2>
-      <p style="margin:0 0 16px 0;">Р—РґСЂР°РІРµР№С‚Рµ, ${esc(p.firstName)} ${esc(p.lastName)},</p>
-      <p style="margin:0 0 8px 0;">Р’Р°С€РёСЏС‚ С‡Р°СЃ Р±РµС€Рµ СѓСЃРїРµС€РЅРѕ Р·Р°РїР°Р·РµРЅ.</p>
+      <h2 style="margin:0 0 8px 0;color:#111827;">Потвърждение за час</h2>
+      <p style="margin:0 0 16px 0;">Здравейте, ${esc(p.firstName)} ${esc(p.lastName)},</p>
+      <p style="margin:0 0 8px 0;">Вашият час беше успешно запазен.</p>
 
       <div style="border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:16px 0;background:#f8fafc;">
-        <p style="margin:0"><strong>Р”Р°С‚Р°:</strong> ${esc(p.dateText)}</p>
-        <p style="margin:0"><strong>Р§Р°СЃ:</strong> ${esc(p.timeText)}</p>
+        <p style="margin:0"><strong>Дата:</strong> ${esc(p.dateText)}</p>
+        <p style="margin:0"><strong>Час:</strong> ${esc(p.timeText)}</p>
         ${therapistLine}
-        <p style="margin:0"><strong>РџСЂРѕС†РµРґСѓСЂР°:</strong> ${esc(p.procedure)}</p>
-        <p style="margin:0"><strong>РўРµР»РµС„РѕРЅ Р·Р° РІСЂСЉР·РєР°:</strong> ${esc(p.phone)}</p>
-        <p style="margin:0"><strong>РђРґСЂРµСЃ:</strong> ${esc(address)}</p>
+        <p style="margin:0"><strong>Процедура:</strong> ${esc(p.procedure)}</p>
+        <p style="margin:0"><strong>Телефон за връзка:</strong> ${esc(p.phone)}</p>
+        <p style="margin:0"><strong>Адрес:</strong> ${esc(address)}</p>
         ${notesLine}
         ${extraHtml}
       </div>
 
       <p style="margin:12px 0;font-size:15px;">
-        РђРєРѕ РЅРµС‰Рѕ СЃРµ РїСЂРѕРјРµРЅРё, РѕР±Р°РґРµС‚Рµ СЃРµ РЅР° 
+        Ако нещо се промени, обадете се на 
         <a href="tel:0883688414" style="color:#0284c7;text-decoration:none;font-weight:600;">
           0883 688 414
         </a>.
       </p>
 
-      <p style="margin:0;color:#334155;">РџРѕР·РґСЂР°РІРё,<br/><strong>DM PHYSIO</strong></p>
+      <p style="margin:0;color:#334155;">Поздрави,<br/><strong>DM PHYSIO</strong></p>
     </div>
   </body>
 </html>`;
 }
 
-/** .ics РіРµРЅРµСЂР°С‚РѕСЂ (iCalendar) */
+/** .ics генератор (iCalendar) */
 function buildICS(p: BookingEmailProps) {
   const uid = p.eventUid ?? `${Date.now()}@dmphysio.com`;
 
@@ -104,16 +106,16 @@ function buildICS(p: BookingEmailProps) {
   const dtStart = toUtcZ(p.startISO);
   const dtEnd = toUtcZ(p.endISO);
 
-  const title = `РџСЂРѕС†РµРґСѓСЂР°: ${p.procedure}${p.therapist ? " вЂў " + p.therapist : ""}`;
+  const title = `Процедура: ${p.procedure}${p.therapist ? " • " + p.therapist : ""}`;
   const descriptionLines = [
-    "РџРѕС‚РІСЉСЂРґРµРЅ С‡Р°СЃ РІ DM PHYSIO.",
-    `РљР»РёРµРЅС‚: ${p.firstName} ${p.lastName}`,
-    `РўРµР»РµС„РѕРЅ: ${p.phone}`,
-    p.notes ? `Р‘РµР»РµР¶РєРё: ${p.notes}` : null,
+    "Потвърден час в DM PHYSIO.",
+    `Клиент: ${p.firstName} ${p.lastName}`,
+    `Телефон: ${p.phone}`,
+    p.notes ? `Бележки: ${p.notes}` : null,
   ].filter(Boolean) as string[];
 
   const description = descriptionLines.join("\n");
-  const location = p.address ?? "РЎРѕС„РёСЏ, СѓР». РџСЂРѕС„. РҐСЂРёСЃС‚Рѕ Р”Р°РЅРѕРІ 19";
+  const location = p.address ?? "София, ул. Проф. Христо Данов 19";
 
   const escapeICS = (s: string) =>
     s.replace(/([\\;,])/g, "\\$1").replace(/\r?\n/g, "\\n");
