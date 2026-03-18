@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCalendar } from "@/app/lib/google";
-import { getSheets } from "@/app/lib/google";
+import { getCalendar, getSheets } from "@/app/lib/google";
 import { sendReviewRequestEmailSMTP } from "@/app/lib/email";
 import { isSmsConfigured, sendReviewRequestSMS } from "@/app/lib/sms";
 
 const DEFAULT_GMAPS_REVIEW_URL = "https://g.page/r/CW2mjx_ste2XEBM/review";
 const REVIEW_DEDUP_SINCE_ISO = "2026-03-18T00:00:00+02:00";
-const REVIEW_SMS_SHEET_TAB = "Имена и тел";
+const REVIEW_SMS_SHEET_TAB = "\u0418\u043c\u0435\u043d\u0430 \u0438 \u0442\u0435\u043b";
 
 type ReviewPrivateProps = Record<string, string> & {
   reviewDueAt?: string;
@@ -326,17 +325,68 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const dryRun = parseBool(url.searchParams.get("dryRun"));
   const testSms = parseBool(url.searchParams.get("testSms"));
+  const testEmail = parseBool(url.searchParams.get("testEmail"));
   const tabName = process.env.REVIEW_SMS_SHEET_TAB || REVIEW_SMS_SHEET_TAB;
   const spreadsheetId = process.env.SHEETS_SPREADSHEET_ID || "";
 
   const calendar = getCalendar();
   const sheets = getSheets();
   const now = new Date();
-  const reviewUrl = DEFAULT_GMAPS_REVIEW_URL;
+  const reviewUrl = (process.env.GMAPS_REVIEW_URL || DEFAULT_GMAPS_REVIEW_URL)
+    .trim()
+    .replace(/^"|"$/g, "");
   const smsReady = isSmsConfigured();
 
   if (spreadsheetId) {
     await ensureReviewSmsSheet(sheets, spreadsheetId, tabName);
+  }
+
+  const sentEmails = await collectAlreadySentEmails(calendar, 18);
+  const sentPhones = await collectAlreadySentPhones(calendar, 18);
+  if (spreadsheetId) {
+    const sentPhonesFromSheet = await collectAlreadySentPhonesFromSheet(
+      sheets,
+      spreadsheetId,
+      tabName
+    );
+    for (const phone of sentPhonesFromSheet) sentPhones.add(phone);
+  }
+
+  if (testEmail) {
+    const testTo = normalizeEmail(url.searchParams.get("testTo") || "");
+    const firstName = (
+      url.searchParams.get("testName") || "\u0422\u0435\u0441\u0442 \u041a\u043b\u0438\u0435\u043d\u0442"
+    ).trim();
+
+    if (!testTo || !testTo.includes("@")) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid testTo email format" },
+        { status: 400 }
+      );
+    }
+
+    if (sentEmails.has(testTo)) {
+      return NextResponse.json({
+        ok: true,
+        mode: "testEmail",
+        skipped: true,
+        reason: "already-sent-by-email",
+        testTo,
+      });
+    }
+
+    const result = await sendReviewRequestEmailSMTP({
+      to: testTo,
+      firstName,
+      mapReviewUrl: reviewUrl,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      mode: "testEmail",
+      testTo,
+      messageId: result.messageId || "",
+    });
   }
 
   if (testSms) {
@@ -354,7 +404,9 @@ export async function GET(req: NextRequest) {
     }
 
     const rawPhone = url.searchParams.get("testPhone") || "";
-    const firstName = (url.searchParams.get("testName") || "Тест Клиент").trim();
+    const firstName = (
+      url.searchParams.get("testName") || "\u0422\u0435\u0441\u0442 \u041a\u043b\u0438\u0435\u043d\u0442"
+    ).trim();
     const normalizedPhone = normalizePhone(rawPhone);
 
     if (!normalizedPhone) {
@@ -362,6 +414,18 @@ export async function GET(req: NextRequest) {
         { ok: false, error: "Invalid testPhone format" },
         { status: 400 }
       );
+    }
+
+    if (sentPhones.has(normalizedPhone)) {
+      return NextResponse.json({
+        ok: true,
+        mode: "testSms",
+        skipped: true,
+        reason: "already-sent-by-phone",
+        testName: firstName,
+        testPhone: normalizedPhone,
+        sheetTab: tabName,
+      });
     }
 
     const smsResult = await sendReviewRequestSMS({
@@ -387,17 +451,6 @@ export async function GET(req: NextRequest) {
       sid: smsResult.sid || "",
       sheetTab: tabName,
     });
-  }
-
-  const sentEmails = await collectAlreadySentEmails(calendar, 18);
-  const sentPhones = await collectAlreadySentPhones(calendar, 18);
-  if (spreadsheetId) {
-    const sentPhonesFromSheet = await collectAlreadySentPhonesFromSheet(
-      sheets,
-      spreadsheetId,
-      tabName
-    );
-    for (const phone of sentPhonesFromSheet) sentPhones.add(phone);
   }
 
   // Look back 7 days so temporary cron outages do not miss review follow-ups.
