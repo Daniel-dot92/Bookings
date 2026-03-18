@@ -213,6 +213,7 @@ export async function POST(req: NextRequest) {
         customerEmail: email,
         customerFirstName: firstName,
         customerLastName: lastName || "",
+        customerPhone: phone,
       },
     };
     // ===============================================================

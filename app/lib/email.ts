@@ -1,33 +1,33 @@
-// /app/lib/email.ts
+﻿// /app/lib/email.ts
 import * as nodemailer from "nodemailer";
 
 // ===============================
-// Типове за имейла и .ics файла
+// РўРёРїРѕРІРµ Р·Р° РёРјРµР№Р»Р° Рё .ics С„Р°Р№Р»Р°
 // ===============================
 export type BookingEmailProps = {
-  to: string;           // получател
-  from: string;         // "от" за клиента (ще иде в replyTo/бренд)
-  subject: string;      // тема на имейла
+  to: string;           // РїРѕР»СѓС‡Р°С‚РµР»
+  from: string;         // "РѕС‚" Р·Р° РєР»РёРµРЅС‚Р° (С‰Рµ РёРґРµ РІ replyTo/Р±СЂРµРЅРґ)
+  subject: string;      // С‚РµРјР° РЅР° РёРјРµР№Р»Р°
   firstName: string;
   lastName: string;
-  dateText: string;     // напр. "събота, 25 октомври 2025 г."
-  timeText: string;     // напр. "13:00–14:00 (60 мин)"
-  therapist?: string;   // име на терапевта (опц.)
-  procedure: string;    // услуга/процедура
-  phone: string;        // телефон на клиента
-  address?: string;     // по подразбиране: София, ул. Проф. Христо Данов 19
-  notes?: string;       // симптоми/бележки (опц.)
-  eventUid?: string;    // UID за .ics (опц.)
-  startISO: string;     // локално ISO с offset, напр. 2025-10-27T13:00:00+03:00
-  endISO: string;       // локално ISO с offset
-  tzid?: string;        // напр. "Europe/Sofia" (информативно)
-  extraHtml?: string;   // допълнителен HTML (бутон за навигация и др.)
+  dateText: string;     // РЅР°РїСЂ. "СЃСЉР±РѕС‚Р°, 25 РѕРєС‚РѕРјРІСЂРё 2025 Рі."
+  timeText: string;     // РЅР°РїСЂ. "13:00вЂ“14:00 (60 РјРёРЅ)"
+  therapist?: string;   // РёРјРµ РЅР° С‚РµСЂР°РїРµРІС‚Р° (РѕРїС†.)
+  procedure: string;    // СѓСЃР»СѓРіР°/РїСЂРѕС†РµРґСѓСЂР°
+  phone: string;        // С‚РµР»РµС„РѕРЅ РЅР° РєР»РёРµРЅС‚Р°
+  address?: string;     // РїРѕ РїРѕРґСЂР°Р·Р±РёСЂР°РЅРµ: РЎРѕС„РёСЏ, СѓР». РџСЂРѕС„. РҐСЂРёСЃС‚Рѕ Р”Р°РЅРѕРІ 19
+  notes?: string;       // СЃРёРјРїС‚РѕРјРё/Р±РµР»РµР¶РєРё (РѕРїС†.)
+  eventUid?: string;    // UID Р·Р° .ics (РѕРїС†.)
+  startISO: string;     // Р»РѕРєР°Р»РЅРѕ ISO СЃ offset, РЅР°РїСЂ. 2025-10-27T13:00:00+03:00
+  endISO: string;       // Р»РѕРєР°Р»РЅРѕ ISO СЃ offset
+  tzid?: string;        // РЅР°РїСЂ. "Europe/Sofia" (РёРЅС„РѕСЂРјР°С‚РёРІРЅРѕ)
+  extraHtml?: string;   // РґРѕРїСЉР»РЅРёС‚РµР»РµРЅ HTML (Р±СѓС‚РѕРЅ Р·Р° РЅР°РІРёРіР°С†РёСЏ Рё РґСЂ.)
 };
 
 // ===============================
-// Помощни функции
+// РџРѕРјРѕС‰РЅРё С„СѓРЅРєС†РёРё
 // ===============================
-/** Мини ескейп за HTML текстови полета */
+/** РњРёРЅРё РµСЃРєРµР№Рї Р·Р° HTML С‚РµРєСЃС‚РѕРІРё РїРѕР»РµС‚Р° */
 function esc(s: string) {
   return s
     .replace(/&/g, "&amp;")
@@ -35,15 +35,15 @@ function esc(s: string) {
     .replace(/>/g, "&gt;");
 }
 
-/** HTML шаблон на имейла */
+/** HTML С€Р°Р±Р»РѕРЅ РЅР° РёРјРµР№Р»Р° */
 function buildEmailHTML(p: BookingEmailProps) {
-  const address = p.address ?? "София, ул. Проф. Христо Данов 19";
+  const address = p.address ?? "РЎРѕС„РёСЏ, СѓР». РџСЂРѕС„. РҐСЂРёСЃС‚Рѕ Р”Р°РЅРѕРІ 19";
 
   const therapistLine = p.therapist
-    ? `<p style="margin:0"><strong>Терапевт:</strong> ${esc(p.therapist)}</p>`
+    ? `<p style="margin:0"><strong>РўРµСЂР°РїРµРІС‚:</strong> ${esc(p.therapist)}</p>`
     : "";
   const notesLine = p.notes
-    ? `<p style="margin:0"><strong>Симптоми/бележки:</strong> ${esc(p.notes)}</p>`
+    ? `<p style="margin:0"><strong>РЎРёРјРїС‚РѕРјРё/Р±РµР»РµР¶РєРё:</strong> ${esc(p.notes)}</p>`
     : "";
 
   const extraHtml = p.extraHtml ? `<div style="margin-top:12px">${p.extraHtml}</div>` : "";
@@ -53,35 +53,35 @@ function buildEmailHTML(p: BookingEmailProps) {
   <body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
                color:#0f172a;background-color:#ffffff;margin:0;padding:20px;">
     <div style="max-width:600px;margin:auto;">
-      <h2 style="margin:0 0 8px 0;color:#111827;">Потвърждение за час</h2>
-      <p style="margin:0 0 16px 0;">Здравейте, ${esc(p.firstName)} ${esc(p.lastName)},</p>
-      <p style="margin:0 0 8px 0;">Вашият час беше успешно запазен.</p>
+      <h2 style="margin:0 0 8px 0;color:#111827;">РџРѕС‚РІСЉСЂР¶РґРµРЅРёРµ Р·Р° С‡Р°СЃ</h2>
+      <p style="margin:0 0 16px 0;">Р—РґСЂР°РІРµР№С‚Рµ, ${esc(p.firstName)} ${esc(p.lastName)},</p>
+      <p style="margin:0 0 8px 0;">Р’Р°С€РёСЏС‚ С‡Р°СЃ Р±РµС€Рµ СѓСЃРїРµС€РЅРѕ Р·Р°РїР°Р·РµРЅ.</p>
 
       <div style="border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:16px 0;background:#f8fafc;">
-        <p style="margin:0"><strong>Дата:</strong> ${esc(p.dateText)}</p>
-        <p style="margin:0"><strong>Час:</strong> ${esc(p.timeText)}</p>
+        <p style="margin:0"><strong>Р”Р°С‚Р°:</strong> ${esc(p.dateText)}</p>
+        <p style="margin:0"><strong>Р§Р°СЃ:</strong> ${esc(p.timeText)}</p>
         ${therapistLine}
-        <p style="margin:0"><strong>Процедура:</strong> ${esc(p.procedure)}</p>
-        <p style="margin:0"><strong>Телефон за връзка:</strong> ${esc(p.phone)}</p>
-        <p style="margin:0"><strong>Адрес:</strong> ${esc(address)}</p>
+        <p style="margin:0"><strong>РџСЂРѕС†РµРґСѓСЂР°:</strong> ${esc(p.procedure)}</p>
+        <p style="margin:0"><strong>РўРµР»РµС„РѕРЅ Р·Р° РІСЂСЉР·РєР°:</strong> ${esc(p.phone)}</p>
+        <p style="margin:0"><strong>РђРґСЂРµСЃ:</strong> ${esc(address)}</p>
         ${notesLine}
         ${extraHtml}
       </div>
 
       <p style="margin:12px 0;font-size:15px;">
-        Ако нещо се промени, обадете се на 
+        РђРєРѕ РЅРµС‰Рѕ СЃРµ РїСЂРѕРјРµРЅРё, РѕР±Р°РґРµС‚Рµ СЃРµ РЅР° 
         <a href="tel:0883688414" style="color:#0284c7;text-decoration:none;font-weight:600;">
           0883 688 414
         </a>.
       </p>
 
-      <p style="margin:0;color:#334155;">Поздрави,<br/><strong>DM PHYSIO</strong></p>
+      <p style="margin:0;color:#334155;">РџРѕР·РґСЂР°РІРё,<br/><strong>DM PHYSIO</strong></p>
     </div>
   </body>
 </html>`;
 }
 
-/** .ics генератор (iCalendar) */
+/** .ics РіРµРЅРµСЂР°С‚РѕСЂ (iCalendar) */
 function buildICS(p: BookingEmailProps) {
   const uid = p.eventUid ?? `${Date.now()}@dmphysio.com`;
 
@@ -104,16 +104,16 @@ function buildICS(p: BookingEmailProps) {
   const dtStart = toUtcZ(p.startISO);
   const dtEnd = toUtcZ(p.endISO);
 
-  const title = `Процедура: ${p.procedure}${p.therapist ? " • " + p.therapist : ""}`;
+  const title = `РџСЂРѕС†РµРґСѓСЂР°: ${p.procedure}${p.therapist ? " вЂў " + p.therapist : ""}`;
   const descriptionLines = [
-    "Потвърден час в DM PHYSIO.",
-    `Клиент: ${p.firstName} ${p.lastName}`,
-    `Телефон: ${p.phone}`,
-    p.notes ? `Бележки: ${p.notes}` : null,
+    "РџРѕС‚РІСЉСЂРґРµРЅ С‡Р°СЃ РІ DM PHYSIO.",
+    `РљР»РёРµРЅС‚: ${p.firstName} ${p.lastName}`,
+    `РўРµР»РµС„РѕРЅ: ${p.phone}`,
+    p.notes ? `Р‘РµР»РµР¶РєРё: ${p.notes}` : null,
   ].filter(Boolean) as string[];
 
   const description = descriptionLines.join("\n");
-  const location = p.address ?? "София, ул. Проф. Христо Данов 19";
+  const location = p.address ?? "РЎРѕС„РёСЏ, СѓР». РџСЂРѕС„. РҐСЂРёСЃС‚Рѕ Р”Р°РЅРѕРІ 19";
 
   const escapeICS = (s: string) =>
     s.replace(/([\\;,])/g, "\\$1").replace(/\r?\n/g, "\\n");
@@ -138,7 +138,7 @@ function buildICS(p: BookingEmailProps) {
 }
 
 // =========================================
-// Изпращане през Gmail SMTP (Nodemailer)
+// РР·РїСЂР°С‰Р°РЅРµ РїСЂРµР· Gmail SMTP (Nodemailer)
 // =========================================
 export async function sendBookingEmailSMTP(p: BookingEmailProps) {
   const env = process.env as Record<string, string | undefined>;
@@ -214,17 +214,36 @@ export async function sendReviewRequestEmailSMTP(p: {
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+  const fullName = `${esc(p.firstName)}${p.lastName ? " " + esc(p.lastName) : ""}`;
+
   const html = `<!doctype html>
 <html>
 <body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;background:#fff;margin:0;padding:20px">
   <div style="max-width:600px;margin:auto">
-    <h2 style="margin:0 0 8px 0;color:#111827;">Как мина процедурата?</h2>
-    <p style="margin:0 0 12px 0">Здравейте, ${esc(p.firstName)}${p.lastName ? " " + esc(p.lastName) : ""}!</p>
-    <p style="margin:0 0 12px 0">Ще се радваме да оставите кратко ревю за работата ни. Вашата обратна връзка помага на други хора да вземат решение.</p>
+    <p style="margin:0 0 14px 0;">Здравейте, ${fullName},</p>
+
+    <h2 style="margin:0 0 10px 0;color:#111827;font-size:22px;line-height:1.3;">Как се чувствате след терапията?</h2>
+
+    <p style="margin:0 0 10px 0;">По-леко движение? По-малко болка? Или най-накрая усещате, че тялото ви започва да работи както трябва?</p>
+
+    <p style="margin:0 0 10px 0;">За нас това означава много.</p>
+
+    <p style="margin:0 0 10px 0;">Ако сме ви помогнали дори малко да се освободите от болката и да се върнете към нормалния си живот, ще сме ви благодарни да споделите своя опит.</p>
+
+    <p style="margin:0 0 10px 0;">Вашето мнение помага на други хора, които в момента се колебаят и живеят с болка, да направят първата стъпка към промяната.</p>
+
     <div style="margin:18px 0">
-      <a href="${esc(p.mapReviewUrl)}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600">Оставете ревю в Google</a>
+      <a href="${esc(p.mapReviewUrl)}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600">👉 Оставете ревю в Google</a>
     </div>
-    <p style="margin:12px 0;color:#334155">Благодарим ви!<br><strong>DM PHYSIO</strong></p>
+
+    <p style="margin:0 0 8px 0;">Благодарим ви, че ни се доверихте!</p>
+
+    <p style="margin:0;color:#334155;">С уважение,<br><strong>DM PHYSIO</strong></p>
+    <p style="margin:12px 0 0 0;color:#334155;">
+      Даниел Митев - Телефон<br>
+      0883 688 414<br>
+      Елица Колева -телефон 0893 673 007
+    </p>
   </div>
 </body>
 </html>`;
@@ -238,7 +257,7 @@ export async function sendReviewRequestEmailSMTP(p: {
     sender: SMTP_USER,
     replyTo: replyToHeader,
     to: p.to,
-    subject: "Ще ни оставите ли кратко ревю? 🙂",
+    subject: "Как се чувствате след терапията?",
     html,
   });
 
