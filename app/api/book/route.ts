@@ -131,6 +131,39 @@ function addDaysToYmd(ymd: string, days: number) {
   return `${yy}-${mm}-${dd}`;
 }
 
+function toUtcGoogleDateTime(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    d.getUTCFullYear().toString() +
+    pad(d.getUTCMonth() + 1) +
+    pad(d.getUTCDate()) +
+    "T" +
+    pad(d.getUTCHours()) +
+    pad(d.getUTCMinutes()) +
+    pad(d.getUTCSeconds()) +
+    "Z"
+  );
+}
+
+function getPublicBookingOrigin() {
+  const candidates = [
+    process.env.BOOKING_PUBLIC_ORIGIN,
+    process.env.NEXT_PUBLIC_BOOKING_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    "https://book.dmphysi0.com",
+  ].filter(Boolean) as string[];
+
+  for (const raw of candidates) {
+    try {
+      return new URL(raw).origin;
+    } catch {
+      // skip invalid env values
+    }
+  }
+  return "https://book.dmphysi0.com";
+}
+
 // 🚀 Главна функция
 export async function POST(req: NextRequest) {
   try {
@@ -334,6 +367,34 @@ export async function POST(req: NextRequest) {
 
       const address = "София, ул. Професор Христо Данов 19";
       const mapsUrl = "https://maps.app.goo.gl/vFHqq2TFV7XRVSTd8";
+      const bookingOrigin = getPublicBookingOrigin();
+      const calendarTitle = `DM PHYSIO - ${procedure}`;
+      const calendarDetails = [
+        `Терапевт: ${therapistName}`,
+        `Процедура: ${procedure}`,
+        `Дата: ${dateText}`,
+        `Час: ${timeText}`,
+      ].join("\n");
+      const googleDates = `${toUtcGoogleDateTime(startISO)}/${toUtcGoogleDateTime(endISO)}`;
+      const googleCalendarUrl =
+        `https://calendar.google.com/calendar/render?` +
+        new URLSearchParams({
+          action: "TEMPLATE",
+          text: calendarTitle,
+          dates: googleDates,
+          details: calendarDetails,
+          location: address,
+          ctz: tzid,
+        }).toString();
+      const iosCalendarUrl =
+        `${bookingOrigin}/api/calendar/ics?` +
+        new URLSearchParams({
+          title: calendarTitle,
+          start: startISO,
+          end: endISO,
+          location: address,
+          details: calendarDetails,
+        }).toString();
 
       await sendBookingEmailSMTP({
         to: email,
@@ -359,6 +420,22 @@ export async function POST(req: NextRequest) {
                       background:#00c4c4;color:#fff;font-weight:bold;
                       border-radius:8px;text-decoration:none;">
               Навигация с Google Maps
+            </a>
+          </p>
+          <p style="margin-top:10px;">
+            <a href="${googleCalendarUrl}" target="_blank"
+               style="display:inline-block;padding:10px 16px;
+                      background:#16a34a;color:#fff;font-weight:bold;
+                      border-radius:8px;text-decoration:none;">
+              Add to Google Calendar
+            </a>
+          </p>
+          <p style="margin-top:10px;">
+            <a href="${iosCalendarUrl}" target="_blank"
+               style="display:inline-block;padding:10px 16px;
+                      background:#2563eb;color:#fff;font-weight:bold;
+                      border-radius:8px;text-decoration:none;">
+              Add to iOS Calendar
             </a>
           </p>
         `,
