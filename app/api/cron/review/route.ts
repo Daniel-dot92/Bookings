@@ -186,9 +186,13 @@ function formatDirectoryBookedAt(start?: {
   if (start?.dateTime) {
     const d = new Date(start.dateTime);
     if (!Number.isNaN(d.getTime())) {
-      return new Intl.DateTimeFormat("bg-BG", {
-        dateStyle: "short",
-        timeStyle: "short",
+      // Sort-friendly format: YYYY-MM-DD HH:mm
+      return new Intl.DateTimeFormat("sv-SE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
         timeZone: "Europe/Sofia",
       }).format(d);
     }
@@ -196,6 +200,14 @@ function formatDirectoryBookedAt(start?: {
 
   if (start?.date) return start.date;
   return "";
+}
+
+function getNameCategoryLetter(name: string) {
+  const trimmed = name.trim();
+  for (const ch of trimmed) {
+    if (/\p{L}/u.test(ch)) return ch.toUpperCase();
+  }
+  return "#";
 }
 
 function isWebsiteBooking(
@@ -328,10 +340,10 @@ async function ensureReviewSmsSheet(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${tabName}!A1:C1`,
+    range: `${tabName}!A1:D1`,
     valueInputOption: "RAW",
     requestBody: {
-      values: [["Име", "Телефон", "Кога е записан"]],
+      values: [["Име", "Телефон", "Кога е записан", "Категория"]],
     },
   });
 }
@@ -396,7 +408,7 @@ async function syncDirectorySheetFromCalendar(args: {
 }) {
   const byPhone = new Map<
     string,
-    { name: string; bookedAt: string; sortMs: number }
+    { name: string; bookedAt: string; sortMs: number; category: string }
   >();
 
   let pageToken: string | undefined;
@@ -424,38 +436,74 @@ async function syncDirectorySheetFromCalendar(args: {
 
       const name = extractDirectoryName(priv, ev.summary);
       const bookedAt = formatDirectoryBookedAt(ev.start);
+      const category = getNameCategoryLetter(name);
 
       const sortSource = ev.start?.dateTime || ev.start?.date || ev.created || "";
       const sortMs = Number.isNaN(new Date(sortSource).getTime())
-        ? Number.MAX_SAFE_INTEGER
+        ? Number.MIN_SAFE_INTEGER
         : new Date(sortSource).getTime();
 
       const prev = byPhone.get(phone);
-      if (!prev || sortMs < prev.sortMs) {
-        byPhone.set(phone, { name, bookedAt, sortMs });
+      // Keep the latest booking by this phone.
+      if (!prev || sortMs > prev.sortMs) {
+        byPhone.set(phone, { name, bookedAt, sortMs, category });
       }
     }
   } while (pageToken);
 
   const rows = [...byPhone.entries()]
-    .map(([phone, data]) => [data.name, phone, data.bookedAt])
+    .map(([phone, data]) => [data.name, phone, data.bookedAt, data.category, data.sortMs] as const)
     .sort(
       (a, b) =>
+        b[4] - a[4] ||
+        a[3].localeCompare(b[3], "bg", { sensitivity: "base" }) ||
         a[0].localeCompare(b[0], "bg", { sensitivity: "base" }) ||
         a[1].localeCompare(b[1], "bg", { sensitivity: "base" })
-    );
+    )
+    .map((r) => [r[0], r[1], r[2], r[3]]);
 
   await args.sheets.spreadsheets.values.clear({
     spreadsheetId: args.spreadsheetId,
-    range: `${args.tabName}!A2:C`,
+    range: `${args.tabName}!A2:D`,
   });
 
   if (rows.length > 0) {
     await args.sheets.spreadsheets.values.update({
       spreadsheetId: args.spreadsheetId,
-      range: `${args.tabName}!A2:C`,
+      range: `${args.tabName}!A2:D`,
       valueInputOption: "RAW",
       requestBody: { values: rows },
+    });
+  }
+
+  // Ensure the sheet has filter controls on all directory columns.
+  const sheetMeta = await args.sheets.spreadsheets.get({
+    spreadsheetId: args.spreadsheetId,
+  });
+  const targetSheet = (sheetMeta.data.sheets || []).find(
+    (s) => s.properties?.title === args.tabName
+  );
+  const targetSheetId = targetSheet?.properties?.sheetId;
+  if (typeof targetSheetId === "number") {
+    await args.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: args.spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            setBasicFilter: {
+              filter: {
+                range: {
+                  sheetId: targetSheetId,
+                  startRowIndex: 0,
+                  endRowIndex: Math.max(rows.length + 1, 2),
+                  startColumnIndex: 0,
+                  endColumnIndex: 4,
+                },
+              },
+            },
+          },
+        ],
+      },
     });
   }
 
