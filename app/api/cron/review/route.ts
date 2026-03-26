@@ -115,6 +115,89 @@ function extractPhoneFromEvent(
   return "";
 }
 
+function normalizeTenDigitPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (digits.length === 10 && digits.startsWith("0")) return digits;
+  if (digits.length === 9 && digits.startsWith("8")) return `0${digits}`;
+  if (digits.length === 12 && digits.startsWith("3598")) return `0${digits.slice(3)}`;
+  if (digits.length === 14 && digits.startsWith("003598")) return `0${digits.slice(5)}`;
+  return "";
+}
+
+function extractTenDigitPhones(text?: string | null) {
+  if (!text) return [];
+  const matches = text.match(/(?:\+359|00359|0)?\s*8\d(?:[\s\-()]*\d){7}/g) ?? [];
+  const phones = new Set<string>();
+  for (const m of matches) {
+    const phone = normalizeTenDigitPhone(m);
+    if (phone) phones.add(phone);
+  }
+  return [...phones];
+}
+
+function extractTenDigitPhoneFromEvent(
+  priv: ReviewPrivateProps,
+  summary?: string | null,
+  description?: string | null
+) {
+  const directCandidates = [
+    priv.customerPhone || "",
+    priv.reviewSmsTo || "",
+  ];
+  for (const raw of directCandidates) {
+    const phone = normalizeTenDigitPhone(raw);
+    if (phone) return phone;
+  }
+
+  const fromDescription = extractTenDigitPhones(description);
+  if (fromDescription.length > 0) return fromDescription[0];
+
+  const fromSummary = extractTenDigitPhones(summary);
+  if (fromSummary.length > 0) return fromSummary[0];
+
+  return "";
+}
+
+function extractDirectoryName(
+  priv: ReviewPrivateProps,
+  summary?: string | null
+) {
+  const fromMeta = `${(priv.customerFirstName || "").trim()} ${(priv.customerLastName || "").trim()}`
+    .trim()
+    .replace(/\s+/g, " ");
+  if (fromMeta) return fromMeta;
+
+  let s = (summary || "").trim();
+  s = s.replace(/^Резервация:\s*/i, "");
+  s = s.replace(/(?:\+359|00359|0)?\s*8\d(?:[\s\-()]*\d){7}/g, "");
+  s = s.replace(/\s+[–—-]\s*$/, "");
+  s = s.trim().replace(/\s+/g, " ");
+
+  if (!s) return "Неизвестен";
+  return s;
+}
+
+function formatDirectoryBookedAt(start?: {
+  dateTime?: string | null;
+  date?: string | null;
+}) {
+  if (start?.dateTime) {
+    const d = new Date(start.dateTime);
+    if (!Number.isNaN(d.getTime())) {
+      return new Intl.DateTimeFormat("bg-BG", {
+        dateStyle: "short",
+        timeStyle: "short",
+        timeZone: "Europe/Sofia",
+      }).format(d);
+    }
+  }
+
+  if (start?.date) return start.date;
+  return "";
+}
+
 function isWebsiteBooking(
   priv: ReviewPrivateProps,
   description?: string | null
@@ -241,17 +324,16 @@ async function ensureReviewSmsSheet(
         requests: [{ addSheet: { properties: { title: tabName } } }],
       },
     });
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${tabName}!A1`,
-      valueInputOption: "RAW",
-      insertDataOption: "INSERT_ROWS",
-      requestBody: {
-        values: [["timestamp", "name", "phone", "source", "eventId"]],
-      },
-    });
   }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${tabName}!A1:C1`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [["Име", "Телефон", "Кога е записан"]],
+    },
+  });
 }
 
 async function collectAlreadySentPhonesFromSheet(
@@ -306,6 +388,80 @@ async function appendSmsLogToSheet(args: {
   });
 }
 
+async function syncDirectorySheetFromCalendar(args: {
+  calendar: ReturnType<typeof getCalendar>;
+  sheets: ReturnType<typeof getSheets>;
+  spreadsheetId: string;
+  tabName: string;
+}) {
+  const byPhone = new Map<
+    string,
+    { name: string; bookedAt: string; sortMs: number }
+  >();
+
+  let pageToken: string | undefined;
+  do {
+    const res = await args.calendar.events.list({
+      calendarId: process.env.BOOKING_CALENDAR_ID!,
+      timeMin: "2010-01-01T00:00:00Z",
+      timeMax: "2100-01-01T00:00:00Z",
+      singleEvents: true,
+      orderBy: "startTime",
+      pageToken,
+    });
+    pageToken = res.data.nextPageToken || undefined;
+
+    for (const ev of res.data.items || []) {
+      if (ev.status === "cancelled") continue;
+
+      const priv = getPrivateProps(ev);
+      const phone = extractTenDigitPhoneFromEvent(
+        priv,
+        ev.summary,
+        ev.description
+      );
+      if (!phone) continue;
+
+      const name = extractDirectoryName(priv, ev.summary);
+      const bookedAt = formatDirectoryBookedAt(ev.start);
+
+      const sortSource = ev.start?.dateTime || ev.start?.date || ev.created || "";
+      const sortMs = Number.isNaN(new Date(sortSource).getTime())
+        ? Number.MAX_SAFE_INTEGER
+        : new Date(sortSource).getTime();
+
+      const prev = byPhone.get(phone);
+      if (!prev || sortMs < prev.sortMs) {
+        byPhone.set(phone, { name, bookedAt, sortMs });
+      }
+    }
+  } while (pageToken);
+
+  const rows = [...byPhone.entries()]
+    .map(([phone, data]) => [data.name, phone, data.bookedAt])
+    .sort(
+      (a, b) =>
+        a[0].localeCompare(b[0], "bg", { sensitivity: "base" }) ||
+        a[1].localeCompare(b[1], "bg", { sensitivity: "base" })
+    );
+
+  await args.sheets.spreadsheets.values.clear({
+    spreadsheetId: args.spreadsheetId,
+    range: `${args.tabName}!A2:C`,
+  });
+
+  if (rows.length > 0) {
+    await args.sheets.spreadsheets.values.update({
+      spreadsheetId: args.spreadsheetId,
+      range: `${args.tabName}!A2:C`,
+      valueInputOption: "RAW",
+      requestBody: { values: rows },
+    });
+  }
+
+  return { rowsWritten: rows.length };
+}
+
 function serializePrivateProps(priv: ReviewPrivateProps) {
   const cleaned: Record<string, string> = {};
   for (const [key, value] of Object.entries(priv)) {
@@ -335,15 +491,25 @@ export async function GET(req: NextRequest) {
   const reviewUrl = (process.env.GMAPS_REVIEW_URL || DEFAULT_GMAPS_REVIEW_URL)
     .trim()
     .replace(/^"|"$/g, "");
-  const smsReady = isSmsConfigured();
+  const smsReady = false && isSmsConfigured();
+  let directoryRowsWritten = 0;
 
   if (spreadsheetId) {
     await ensureReviewSmsSheet(sheets, spreadsheetId, tabName);
+    const syncRes = await syncDirectorySheetFromCalendar({
+      calendar,
+      sheets,
+      spreadsheetId,
+      tabName,
+    });
+    directoryRowsWritten = syncRes.rowsWritten;
   }
 
   const sentEmails = await collectAlreadySentEmails(calendar, 18);
-  const sentPhones = await collectAlreadySentPhones(calendar, 18);
-  if (spreadsheetId) {
+  const sentPhones = smsReady
+    ? await collectAlreadySentPhones(calendar, 18)
+    : new Set<string>();
+  if (smsReady && spreadsheetId) {
     const sentPhonesFromSheet = await collectAlreadySentPhonesFromSheet(
       sheets,
       spreadsheetId,
@@ -390,67 +556,14 @@ export async function GET(req: NextRequest) {
   }
 
   if (testSms) {
-    if (!smsReady) {
-      return NextResponse.json(
-        { ok: false, error: "SMS not configured in environment" },
-        { status: 400 }
-      );
-    }
-    if (!spreadsheetId) {
-      return NextResponse.json(
-        { ok: false, error: "Missing SHEETS_SPREADSHEET_ID" },
-        { status: 400 }
-      );
-    }
-
-    const rawPhone = url.searchParams.get("testPhone") || "";
-    const firstName = (
-      url.searchParams.get("testName") || "\u0422\u0435\u0441\u0442 \u041a\u043b\u0438\u0435\u043d\u0442"
-    ).trim();
-    const normalizedPhone = normalizePhone(rawPhone);
-
-    if (!normalizedPhone) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid testPhone format" },
-        { status: 400 }
-      );
-    }
-
-    if (sentPhones.has(normalizedPhone)) {
-      return NextResponse.json({
-        ok: true,
+    return NextResponse.json(
+      {
+        ok: false,
         mode: "testSms",
-        skipped: true,
-        reason: "already-sent-by-phone",
-        testName: firstName,
-        testPhone: normalizedPhone,
-        sheetTab: tabName,
-      });
-    }
-
-    const smsResult = await sendReviewRequestSMS({
-      to: normalizedPhone,
-      firstName,
-      mapReviewUrl: reviewUrl,
-    });
-
-    await appendSmsLogToSheet({
-      sheets,
-      spreadsheetId,
-      tabName,
-      name: firstName,
-      phone: normalizedPhone,
-      source: "manual-test",
-    });
-
-    return NextResponse.json({
-      ok: true,
-      mode: "testSms",
-      testName: firstName,
-      testPhone: normalizedPhone,
-      sid: smsResult.sid || "",
-      sheetTab: tabName,
-    });
+        error: "SMS is disabled. Phone directory sync is active.",
+      },
+      { status: 400 }
+    );
   }
 
   // Look back 7 days so temporary cron outages do not miss review follow-ups.
@@ -684,10 +797,12 @@ export async function GET(req: NextRequest) {
     websiteEventsSeen,
     nonWebsiteEventsSeen,
     smsSheetWrites,
+    directoryRowsWritten,
     sentRecipientsEmails: sentEmails.size,
     sentRecipientsPhones: sentPhones.size,
     dedupeSince: REVIEW_DEDUP_SINCE_ISO,
     smsConfigured: smsReady,
+    smsDisabled: !smsReady,
     reviewUrl,
     window: { timeMin, timeMax },
   });
