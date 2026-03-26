@@ -150,8 +150,9 @@ function getPublicBookingOrigin() {
   const candidates = [
     process.env.BOOKING_PUBLIC_ORIGIN,
     process.env.NEXT_PUBLIC_BOOKING_URL,
+    process.env.SITE_URL,
     process.env.NEXT_PUBLIC_SITE_URL,
-    "https://book.dmphysi0.com",
+    "https://www.dmphysi0.com/book",
   ].filter(Boolean) as string[];
 
   for (const raw of candidates) {
@@ -161,7 +162,7 @@ function getPublicBookingOrigin() {
       // skip invalid env values
     }
   }
-  return "https://book.dmphysi0.com";
+  return "https://www.dmphysi0.com";
 }
 
 // 🚀 Главна функция

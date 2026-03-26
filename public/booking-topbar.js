@@ -36,11 +36,6 @@
         requestAnimationFrame(() => {
           applyHeaderBg();
 
-          // ✅ ДОПЪЛНЕНИЕ: ако сме в мобилен layout и менюто е отворено – скролът го затваря
-          if (isMobile() && nav?.classList.contains('tb-nav--open')) {
-            closeMobileMenu();
-          }
-
           ticking = false;
         });
         ticking = true;
@@ -70,13 +65,6 @@
       const inside = nav.contains(t) || burger?.contains(t);
       if (!inside && nav.classList.contains('tb-nav--open')) closeMobileMenu();
     });
-
-    // ✅ ДОПЪЛНЕНИЕ: скрол-жестове затварят менюто (wheel / touchmove)
-    const maybeCloseOnScrollGesture = () => {
-      if (isMobile() && nav?.classList.contains('tb-nav--open')) closeMobileMenu();
-    };
-    window.addEventListener('wheel', maybeCloseOnScrollGesture, { passive: true });
-    window.addEventListener('touchmove', maybeCloseOnScrollGesture, { passive: true });
 
     // ESC затваря (мобилен layout)
     document.addEventListener('keydown', (e) => {
