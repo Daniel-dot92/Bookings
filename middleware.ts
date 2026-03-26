@@ -11,9 +11,9 @@ function normalizeHost(raw: string) {
   return raw.trim().toLowerCase().replace(/:\d+$/, "");
 }
 
-function getCanonicalBookingUrl() {
-  const fallback = "https://www.dmphysi0.com/book";
-  const raw = process.env.NEXT_PUBLIC_BOOKING_URL || process.env.CANONICAL_BOOKING_URL || fallback;
+function getCanonicalSiteUrl() {
+  const fallback = "https://www.dmphysi0.com";
+  const raw = process.env.NEXT_PUBLIC_SITE_URL || process.env.CANONICAL_SITE_URL || fallback;
   try {
     return new URL(raw);
   } catch {
@@ -25,11 +25,11 @@ export function middleware(req: NextRequest) {
   const host = normalizeHost(req.headers.get("x-forwarded-host") || req.headers.get("host") || "");
   if (!LEGACY_HOSTS.has(host)) return NextResponse.next();
 
-  const canonical = getCanonicalBookingUrl();
+  const canonical = getCanonicalSiteUrl();
   const destination = new URL(canonical.toString());
 
-  // Keep explicit /book route; root resolves to canonical booking path.
-  destination.pathname = req.nextUrl.pathname === "/" ? canonical.pathname : req.nextUrl.pathname;
+  // Redirect legacy booking host to canonical site root (avoids /book loops on main domain).
+  destination.pathname = canonical.pathname || "/";
   destination.search = req.nextUrl.search;
 
   return NextResponse.redirect(destination, 308);
@@ -38,4 +38,3 @@ export function middleware(req: NextRequest) {
 export const config = {
   matcher: ["/", "/book"],
 };
-
