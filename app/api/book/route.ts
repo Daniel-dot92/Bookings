@@ -300,8 +300,8 @@ export async function POST(req: NextRequest) {
     };
     if (SEND_GCAL_INVITE) eventRequestBody.attendees = [{ email }];
 
-    // ===== ДОБАВКА: метаданни за имейл за ревю (край + 30 мин) =====
-    const reviewDueAtISO = new Date(endUtc.getTime() + 30 * 60 * 1000).toISOString();
+    // ===== ДОБАВКА: метаданни за имейл за ревю (край + 15 мин) =====
+    const reviewDueAtISO = new Date(endUtc.getTime() + 15 * 60 * 1000).toISOString();
     eventRequestBody.extendedProperties = {
       private: {
         reviewDueAt: reviewDueAtISO,

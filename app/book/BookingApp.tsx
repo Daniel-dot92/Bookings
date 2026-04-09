@@ -55,6 +55,14 @@ const EMPTY_FIRST_FREE: FirstFreeMap = {
   daniel: null,
   elitsa: null,
 };
+const INDIVIDUAL_PRICE_LABEL = "Индивидуална цена";
+const PACKAGE_PRICE_LABEL = "Пакет 5 процедури";
+const PACKAGE_PRICE_VALUE = "180 EUR";
+const PRICE_BY_DURATION: Record<30 | 60 | 90, string> = {
+  30: "30 EUR",
+  60: "50 EUR",
+  90: "70 EUR",
+};
 
 // helpers
 function ymd(d: Date) {
@@ -62,6 +70,11 @@ function ymd(d: Date) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function formatDurationLabel(duration: 30 | 60 | 90) {
+  if (duration === 60) return "1 час";
+  return `${duration} мин`;
 }
 
 export default function BookingApp() {
@@ -349,6 +362,8 @@ export default function BookingApp() {
 
   const t = THERAPISTS[therapist];
   const isNoSixtyMinuteNote = Boolean(note && note.includes("60-"));
+  const individualPrice = PRICE_BY_DURATION[duration];
+  const durationLabel = formatDurationLabel(duration);
 
   if (!date) {
     return <div className="min-h-screen bg-white" />;
@@ -419,22 +434,30 @@ export default function BookingApp() {
                           </span>
                         )}
 
-                        <div className="flex items-center gap-3 sm:flex-col sm:text-center">
-                          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                            {item.photo ? (
-                              <Image
-                                src={item.photo}
-                                alt={item.name}
-                                width={64}
-                                height={64}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-600">
-                                DM
-                              </div>
-                            )}
-                          </div>
+                        <div
+                          className={
+                            key === "any"
+                              ? "flex min-h-16 items-center justify-center text-center"
+                              : "flex items-center gap-3 sm:flex-col sm:text-center"
+                          }
+                        >
+                          {key !== "any" && (
+                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                              {item.photo ? (
+                                <Image
+                                  src={item.photo}
+                                  alt={item.name}
+                                  width={64}
+                                  height={64}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-600">
+                                  {item.name.charAt(0)}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-slate-900">
@@ -452,6 +475,46 @@ export default function BookingApp() {
                             >
                               {firstFreeLabel}
                             </div>
+
+                            {active && key !== "any" && (
+                              <div className="package-inline-card mt-3 overflow-hidden rounded-2xl border border-cyan-200/80 bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-950 px-3 py-3 text-left text-white shadow-[0_16px_35px_rgba(14,116,144,0.18)]">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="sr-only">
+                                      Пакетна цена
+                                    </div>
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-200/85">
+                                      {INDIVIDUAL_PRICE_LABEL}
+                                    </div>
+                                    <div className="mt-1 text-sm font-semibold text-white">
+                                      {durationLabel}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-sm font-semibold text-cyan-100">
+                                    {individualPrice}
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-start justify-between gap-3 rounded-2xl border border-white/10 bg-white/8 px-3 py-3">
+                                  <div>
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-200/85">
+                                      {PACKAGE_PRICE_LABEL}
+                                    </div>
+                                    <div className="mt-1 text-sm font-semibold text-white">
+                                      5 x 1 час
+                                    </div>
+                                  </div>
+                                  <div className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-sm font-semibold text-emerald-100">
+                                    {PACKAGE_PRICE_VALUE}
+                                  </div>
+                                </div>
+                                <div className="mt-2 rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-[11px] leading-5 text-slate-200">
+                                  Пакетът се закупува на място и е с валидност 6 месеца.
+                                </div>
+                                <div className="sr-only">
+                                  Показва се при избор на терапевт и важи за 60-минутна сесия.
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </button>

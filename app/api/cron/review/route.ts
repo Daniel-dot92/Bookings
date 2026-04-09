@@ -236,7 +236,7 @@ function getReviewDueAt(reviewDueAtISO: string | undefined, end: Date) {
     const parsed = new Date(reviewDueAtISO);
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
-  return new Date(end.getTime() + 30 * 60 * 1000);
+  return new Date(end.getTime() + 15 * 60 * 1000);
 }
 
 async function collectAlreadySentEmails(

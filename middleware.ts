@@ -6,14 +6,15 @@ const LEGACY_HOSTS = new Set(
     .map((h) => h.trim().toLowerCase())
     .filter(Boolean)
 );
+const CANONICAL_SITE_URL = "https://www.dmphysi0.com";
 
 function normalizeHost(raw: string) {
   return raw.trim().toLowerCase().replace(/:\d+$/, "");
 }
 
 function getCanonicalSiteUrl() {
-  const fallback = "https://www.dmphysi0.com";
-  const raw = process.env.NEXT_PUBLIC_SITE_URL || process.env.CANONICAL_SITE_URL || fallback;
+  const fallback = CANONICAL_SITE_URL;
+  const raw = process.env.CANONICAL_SITE_URL || fallback;
   try {
     return new URL(raw);
   } catch {
@@ -23,12 +24,14 @@ function getCanonicalSiteUrl() {
 
 export function middleware(req: NextRequest) {
   const host = normalizeHost(req.headers.get("x-forwarded-host") || req.headers.get("host") || "");
-  if (!LEGACY_HOSTS.has(host)) return NextResponse.next();
-
   const canonical = getCanonicalSiteUrl();
+  if (host === normalizeHost(canonical.host)) return NextResponse.next();
+  if (!LEGACY_HOSTS.has(host)) return NextResponse.next();
+  if (req.nextUrl.pathname !== "/") return NextResponse.next();
+
   const destination = new URL(canonical.toString());
 
-  // Redirect legacy booking host to canonical site root (avoids /book loops on main domain).
+  // Redirect only legacy host root. Keep /book served by the booking app.
   destination.pathname = canonical.pathname || "/";
   destination.search = req.nextUrl.search;
 
