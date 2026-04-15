@@ -120,16 +120,16 @@ export async function GET(req: NextRequest) {
       const winStart = parseZoned(date, startHHmm);
       const winEnd = parseZoned(date, endHHmm);
 
-      for (const start of generateSlots(date, startHHmm, endHHmm, 30)) {
+      for (const start of generateSlots(date, startHHmm, endHHmm, 60)) {
         // За днешния ден показваме само часове поне 2 часа напред.
         if (isRequestedDateToday && start < minLeadTime) continue;
 
         const label = fmtHHmmLocal(start);
-        // След 22:00 не показваме слотове 08:00 и 08:30 за следващия ден.
+        // След 22:00 не показваме слот 08:00 за следващия ден.
         if (
           isRequestedDateTomorrow &&
           isAfterTenPmInSofia &&
-          (label === "08:00" || label === "08:30")
+          label === "08:00"
         ) {
           continue;
         }
