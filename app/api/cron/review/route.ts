@@ -340,10 +340,10 @@ async function ensureReviewSmsSheet(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${tabName}!A1:D1`,
+    range: `${tabName}!A1:E1`,
     valueInputOption: "RAW",
     requestBody: {
-      values: [["Име", "Телефон", "Кога е записан", "Категория"]],
+      values: [["Име", "Телефон", "Имейл", "Кога е записан", "Категория"]],
     },
   });
 }
@@ -408,7 +408,13 @@ async function syncDirectorySheetFromCalendar(args: {
 }) {
   const byPhone = new Map<
     string,
-    { name: string; bookedAt: string; sortMs: number; category: string }
+    {
+      name: string;
+      email: string;
+      bookedAt: string;
+      sortMs: number;
+      category: string;
+    }
   >();
 
   let pageToken: string | undefined;
@@ -435,6 +441,9 @@ async function syncDirectorySheetFromCalendar(args: {
       if (!phone) continue;
 
       const name = extractDirectoryName(priv, ev.summary);
+      const email = normalizeEmail(
+        priv.customerEmail || extractEmailFromDescription(ev.description)
+      );
       const bookedAt = formatDirectoryBookedAt(ev.start);
       const category = getNameCategoryLetter(name);
 
@@ -446,31 +455,34 @@ async function syncDirectorySheetFromCalendar(args: {
       const prev = byPhone.get(phone);
       // Keep the latest booking by this phone.
       if (!prev || sortMs > prev.sortMs) {
-        byPhone.set(phone, { name, bookedAt, sortMs, category });
+        byPhone.set(phone, { name, email, bookedAt, sortMs, category });
       }
     }
   } while (pageToken);
 
   const rows = [...byPhone.entries()]
-    .map(([phone, data]) => [data.name, phone, data.bookedAt, data.category, data.sortMs] as const)
+    .map(
+      ([phone, data]) =>
+        [data.name, phone, data.email, data.bookedAt, data.category, data.sortMs] as const
+    )
     .sort(
       (a, b) =>
-        b[4] - a[4] ||
-        a[3].localeCompare(b[3], "bg", { sensitivity: "base" }) ||
+        b[5] - a[5] ||
+        a[4].localeCompare(b[4], "bg", { sensitivity: "base" }) ||
         a[0].localeCompare(b[0], "bg", { sensitivity: "base" }) ||
         a[1].localeCompare(b[1], "bg", { sensitivity: "base" })
     )
-    .map((r) => [r[0], r[1], r[2], r[3]]);
+    .map((r) => [r[0], r[1], r[2], r[3], r[4]]);
 
   await args.sheets.spreadsheets.values.clear({
     spreadsheetId: args.spreadsheetId,
-    range: `${args.tabName}!A2:D`,
+    range: `${args.tabName}!A2:E`,
   });
 
   if (rows.length > 0) {
     await args.sheets.spreadsheets.values.update({
       spreadsheetId: args.spreadsheetId,
-      range: `${args.tabName}!A2:D`,
+      range: `${args.tabName}!A2:E`,
       valueInputOption: "RAW",
       requestBody: { values: rows },
     });
@@ -497,7 +509,7 @@ async function syncDirectorySheetFromCalendar(args: {
                   startRowIndex: 0,
                   endRowIndex: Math.max(rows.length + 1, 2),
                   startColumnIndex: 0,
-                  endColumnIndex: 4,
+                  endColumnIndex: 5,
                 },
               },
             },
