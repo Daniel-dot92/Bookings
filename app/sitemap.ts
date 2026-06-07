@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getBookingUrl } from "@/app/lib/site";
+import { getBookingUrl, getSiteUrl } from "@/app/lib/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
@@ -9,6 +9,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "daily",
       priority: 1,
     },
+    {
+      url: `${getSiteUrl()}/en/book`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 1,
+    },
   ];
 }
-

@@ -1,7 +1,8 @@
 // app/lib/ui.ts
-export function fmtDateHeader(d: Date) {
-  // Пример: "вторник, 16 септември 2025 г."
-  return d.toLocaleDateString("bg-BG", {
+export type UiLocale = "bg" | "en";
+
+export function fmtDateHeader(d: Date, locale: UiLocale = "bg") {
+  return d.toLocaleDateString(locale === "en" ? "en-GB" : "bg-BG", {
     weekday: "long",
     year: "numeric",
     month: "long",
