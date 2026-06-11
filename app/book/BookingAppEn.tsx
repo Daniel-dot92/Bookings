@@ -89,6 +89,7 @@ export default function BookingAppEn() {
     procedure: "",
     symptoms: "",
   });  const listRef = React.useRef<HTMLDivElement>(null);
+  const timesSectionRef = React.useRef<HTMLDivElement | null>(null);
   const formSectionRef = React.useRef<HTMLDivElement | null>(null);
 
   // timezone
@@ -192,6 +193,26 @@ export default function BookingAppEn() {
   React.useEffect(() => {
     if (date) void loadFirstFreeByTherapist();
   }, [date, loadFirstFreeByTherapist]);
+
+  function scrollToTimesOnMobile() {
+    if (typeof window === "undefined" || window.innerWidth > 768) return;
+    const anchor = timesSectionRef.current;
+    if (!anchor) return;
+    const header = document.querySelector(".tb-header") as HTMLElement | null;
+    const offset = header ? header.offsetHeight + 10 : 66;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const y = anchor.getBoundingClientRect().top + window.scrollY - offset;
+        window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+      });
+    });
+  }
+
+  function handleTherapistSelect(key: TherapistKey) {
+    setTherapist(key);
+    window.setTimeout(scrollToTimesOnMobile, 180);
+  }
 
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
@@ -383,7 +404,7 @@ export default function BookingAppEn() {
                       <button
                         key={key}
                         type="button"
-                        onClick={() => setTherapist(key)}
+                        onClick={() => handleTherapistSelect(key)}
                         aria-pressed={active}
                         className={[
                           "relative rounded-xl border p-3 text-left transition",
@@ -496,7 +517,7 @@ export default function BookingAppEn() {
           </div>
 
           {/* ЧАСОВЕ – тесен панел */}
-          <div className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
+          <div ref={timesSectionRef} className="w-full md:w-[320px] shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col" style={{ scrollMarginTop: "calc(var(--tb-h, 64px) + 10px)" }}>
             <div className="px-4 pt-4">
               <div
                 className="text-sm font-medium text-slate-900"
