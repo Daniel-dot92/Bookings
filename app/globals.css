@@ -85,3 +85,9 @@ body {
     transform: translateX(120%);
   }
 }
+
+@media (max-width: 640px) {
+  .booking-time-section {
+    min-height: calc(100svh - var(--tb-h, 64px) - 16px);
+  }
+}

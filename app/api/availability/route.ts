@@ -1,13 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCalendar } from "@/app/lib/google";
-import { dayBounds, generateSlots, fmtHHmmLocal, parseZoned } from "@/app/lib/datetime";
+import { dayBounds, fmtHHmmLocal, generateSlots, parseZoned } from "@/app/lib/datetime";
+import {
+  type ShiftWindow,
+  getOfficeTherapists,
+  getTherapistShift,
+  isOfficeKey,
+  isTherapistSelectionKey,
+} from "@/app/lib/booking-config";
+import { getCalendarIdForOffice } from "@/app/lib/booking-config.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Slot = { time: string; available: boolean };
-type TherapistKey = "any" | "daniel" | "elitsa";
+
 const MIN_LEAD_TIME_MINUTES = 120;
+
+function isGoogleCalendarNotFound(error: unknown) {
+  const status =
+    typeof error === "object" && error !== null
+      ? (error as { code?: number; response?: { status?: number } }).response?.status ??
+        (error as { code?: number }).code
+      : undefined;
+  const message =
+    typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : "";
+
+  return status === 404 || message === "Not Found";
+}
 
 function ymdInSofia(d: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -40,140 +62,176 @@ function addDaysToYmd(ymd: string, days: number) {
   return `${yy}-${mm}-${dd}`;
 }
 
-// Делнични (Mon–Fri)
-const WEEKDAY_SHIFT = {
-  daniel: { START: "13:00", END: "19:00" },
-  elitsa: { START: "08:00", END: "13:00" },
-} as const;
+function buildSlotsForWindow(args: {
+  date: string;
+  duration: number;
+  window: ShiftWindow;
+  isRequestedDateToday: boolean;
+  isRequestedDateTomorrow: boolean;
+  isAfterTenPmInSofia: boolean;
+  minLeadTime: Date;
+  isFree: (start: Date, end: Date) => boolean;
+}) {
+  const result: Slot[] = [];
+  const winStart = parseZoned(args.date, args.window.start);
+  const winEnd = parseZoned(args.date, args.window.end);
 
-// Събота
-const SAT_SHIFT = {
-  daniel: { START: "13:00", END: "16:00" },
-  elitsa: { START: "08:00", END: "13:00" },
-} as const;
+  for (const start of generateSlots(args.date, args.window.start, args.window.end, 60)) {
+    if (args.isRequestedDateToday && start < args.minLeadTime) continue;
+
+    const label = fmtHHmmLocal(start);
+    if (args.isRequestedDateTomorrow && args.isAfterTenPmInSofia && label === "08:00") {
+      continue;
+    }
+
+    const end =
+      args.duration === 30
+        ? new Date(start.getTime() + 30 * 60 * 1000)
+        : args.duration === 60
+        ? new Date(start.getTime() + 60 * 60 * 1000)
+        : new Date(start.getTime() + 90 * 60 * 1000);
+
+    if (start < winStart || end > winEnd) continue;
+
+    result.push({
+      time: label,
+      available: args.isFree(start, end),
+    });
+  }
+
+  return result;
+}
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const date = searchParams.get("date") || "";
-    const duration = Number(searchParams.get("duration") || "30"); // 30 | 60 | 90
-    const therapist = (searchParams.get("therapist") || "any") as TherapistKey;
+    const duration = Number(searchParams.get("duration") || "30");
+    const location = searchParams.get("location");
+    const therapist = searchParams.get("therapist");
 
-    if (!date || ![30, 60, 90].includes(duration)) {
+    if (!date || ![30, 60, 90].includes(duration) || !isOfficeKey(location)) {
       return NextResponse.json({ slots: [] });
     }
 
-    // Ден от седмицата по Europe/Sofia
+    const officeKey = location;
+    const therapistSelection = isTherapistSelectionKey(therapist) ? therapist : "any";
+
     const dNoon = parseZoned(date, "12:00");
     const weekday = new Intl.DateTimeFormat("en-US", {
       weekday: "short",
       timeZone: "Europe/Sofia",
     }).format(dNoon);
 
-    // ❌ Неделя: почивен ден
     if (weekday === "Sun") {
       return NextResponse.json({ slots: [] });
     }
 
-    const calId = process.env.BOOKING_CALENDAR_ID;
-    if (!calId) {
-      console.error("BOOKING_CALENDAR_ID is missing.");
+    const isSaturday = weekday === "Sat";
+    const officeTherapists = getOfficeTherapists(officeKey);
+    if (
+      therapistSelection !== "any" &&
+      !officeTherapists.includes(therapistSelection)
+    ) {
+      return NextResponse.json({ slots: [] });
+    }
+
+    const shiftWindows =
+      therapistSelection === "any"
+        ? officeTherapists
+            .map((key) => getTherapistShift(officeKey, key, isSaturday))
+            .filter(Boolean) as ShiftWindow[]
+        : [getTherapistShift(officeKey, therapistSelection, isSaturday)].filter(Boolean) as ShiftWindow[];
+
+    if (shiftWindows.length === 0) {
+      return NextResponse.json({ slots: [] });
+    }
+
+    const calendarId = getCalendarIdForOffice(officeKey);
+    if (!calendarId) {
+      console.error(`Missing calendar for office ${officeKey}.`);
       return NextResponse.json({ slots: [] }, { status: 500 });
     }
 
     const cal = getCalendar();
+    try {
+      await cal.calendars.get({ calendarId });
+    } catch (error) {
+      if (isGoogleCalendarNotFound(error)) {
+        return NextResponse.json(
+          {
+            slots: [],
+            error: "Онлайн записването за този обект е временно недостъпно. Моля, опитайте отново малко по-късно.",
+          },
+          { status: 503 }
+        );
+      }
+      throw error;
+    }
+
     const now = new Date();
-    const minLeadTime = new Date(
-      now.getTime() + MIN_LEAD_TIME_MINUTES * 60 * 1000
-    );
-    const nowMinutesInSofia = hmInSofia(now);
-    const isAfterTenPmInSofia = nowMinutesInSofia >= 22 * 60;
+    const minLeadTime = new Date(now.getTime() + MIN_LEAD_TIME_MINUTES * 60 * 1000);
     const todayInSofia = ymdInSofia(now);
     const tomorrowInSofia = addDaysToYmd(todayInSofia, 1);
     const isRequestedDateToday = date === todayInSofia;
     const isRequestedDateTomorrow = date === tomorrowInSofia;
+    const isAfterTenPmInSofia = hmInSofia(now) >= 22 * 60;
 
-    // Вземаме заетост за целия ден
     const { timeMin, timeMax } = dayBounds(date);
     const fb = await cal.freebusy.query({
       requestBody: {
         timeMin,
         timeMax,
         timeZone: "Europe/Sofia",
-        items: [{ id: calId }],
+        items: [{ id: calendarId }],
       },
     });
 
     const busy =
-      (fb.data.calendars?.[calId]?.busy as Array<{ start?: string | null; end?: string | null }> | undefined) || [];
+      (fb.data.calendars?.[calendarId]?.busy as Array<
+        { start?: string | null; end?: string | null }
+      > | undefined) || [];
 
     const isFree = (start: Date, end: Date) =>
-      !busy.some((b) => {
-        const bStart = new Date(b.start ?? "");
-        const bEnd = new Date(b.end ?? "");
-        return start < bEnd && end > bStart;
+      !busy.some((entry) => {
+        const busyStart = new Date(entry.start ?? "");
+        const busyEnd = new Date(entry.end ?? "");
+        return start < busyEnd && end > busyStart;
       });
 
-    // Генерира слотове за зададен прозорец
-    function buildSlotsForWindow(startHHmm: string, endHHmm: string): Slot[] {
-      const result: Slot[] = [];
-      const winStart = parseZoned(date, startHHmm);
-      const winEnd = parseZoned(date, endHHmm);
+    const map = new Map<string, Slot>();
 
-      for (const start of generateSlots(date, startHHmm, endHHmm, 60)) {
-        // За днешния ден показваме само часове поне 2 часа напред.
-        if (isRequestedDateToday && start < minLeadTime) continue;
+    for (const shiftWindow of shiftWindows) {
+      const builtSlots = buildSlotsForWindow({
+        date,
+        duration,
+        window: shiftWindow,
+        isRequestedDateToday,
+        isRequestedDateTomorrow,
+        isAfterTenPmInSofia,
+        minLeadTime,
+        isFree,
+      });
 
-        const label = fmtHHmmLocal(start);
-        // След 22:00 не показваме слот 08:00 за следващия ден.
-        if (
-          isRequestedDateTomorrow &&
-          isAfterTenPmInSofia &&
-          label === "08:00"
-        ) {
-          continue;
-        }
-
-        const end =
-          duration === 30
-            ? new Date(start.getTime() + 30 * 60 * 1000)
-            : duration === 60
-            ? new Date(start.getTime() + 60 * 60 * 1000)
-            : new Date(start.getTime() + 90 * 60 * 1000);
-
-        // слотът трябва да е изцяло в рамките на работния прозорец
-        if (start < winStart || end > winEnd) continue;
-
-        result.push({ time: label, available: isFree(start, end) });
+      for (const slot of builtSlots) {
+        const existing = map.get(slot.time);
+        map.set(slot.time, {
+          time: slot.time,
+          available: (existing?.available ?? false) || slot.available,
+        });
       }
-      return result;
     }
 
-    // Избор на прозорци според деня
-    const isSaturday = weekday === "Sat";
-    const SHIFT = isSaturday ? SAT_SHIFT : WEEKDAY_SHIFT;
-
-    let slots: Slot[] = [];
-
-    if (therapist === "daniel") {
-      slots = buildSlotsForWindow(SHIFT.daniel.START, SHIFT.daniel.END);
-    } else if (therapist === "elitsa") {
-      slots = buildSlotsForWindow(SHIFT.elitsa.START, SHIFT.elitsa.END);
-    } else {
-      // "any" → обединяваме прозорците на двамата
-      const a = buildSlotsForWindow(SHIFT.elitsa.START, SHIFT.elitsa.END);
-      const b = buildSlotsForWindow(SHIFT.daniel.START, SHIFT.daniel.END);
-      const map = new Map<string, Slot>();
-      [...a, ...b].forEach((s) => {
-        const prev = map.get(s.time);
-        map.set(s.time, { time: s.time, available: (prev?.available ?? false) || s.available });
-      });
-      slots = Array.from(map.values()).sort((x, y) => x.time.localeCompare(y.time));
-    }
-
+    const slots = [...map.values()].sort((a, b) => a.time.localeCompare(b.time));
     return NextResponse.json({ slots });
   } catch (e) {
     console.error("AVAILABILITY ERROR:", e);
-    return NextResponse.json({ slots: [] }, { status: 500 });
+    return NextResponse.json(
+      {
+        slots: [],
+        error: "Свободните часове временно не могат да се заредят.",
+      },
+      { status: 500 }
+    );
   }
 }

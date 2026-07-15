@@ -11,7 +11,6 @@
     const header = document.querySelector('.tb-header');
     const burger = document.querySelector('.tb-burger');
     const nav    = document.querySelector('.tb-nav');
-    const dropToggles = document.querySelectorAll('.tb-drop-toggle');
 
     /* ---------- SCROLL BG ---------- */
     function applyHeaderBg(){
@@ -79,23 +78,49 @@
     mq.addEventListener?.('change', handleViewportChange);
 
     /* ---------- DROPDOWN ---------- */
-    // на мобилно: линковете навигират; на десктоп: hover (CSS) + optional click-toggle
-    dropToggles.forEach(a => {
-      a.addEventListener('click', (e) => {
-        if (isMobile()) return; // мобилно → следва href
-        if (a.dataset.dropdown === 'toggle'){
-          e.preventDefault();
-          const li = a.closest('.tb-dropdown');
-          if (!li) return;
-          document.querySelectorAll('.tb-dropdown.tb-open').forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
-          li.classList.toggle('tb-open');
-        }
+    document.addEventListener('click', (e) => {
+      const toggle = e.target.closest?.('.tb-drop-toggle');
+      if (!toggle || !nav?.contains(toggle) || !isMobile()) return;
+      const li = toggle.closest('.tb-dropdown');
+      if (!li) return;
+      e.preventDefault();
+      e.stopPropagation();
+      document.querySelectorAll('.tb-dropdown.tb-open').forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+      li.classList.toggle('tb-open');
+    }, true);
+
+    nav?.querySelectorAll('.tb-drop-toggle').forEach((toggle) => {
+      toggle.addEventListener('click', (e) => {
+        if (!isMobile()) return;
+        const li = toggle.closest('.tb-dropdown');
+        if (!li) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        document.querySelectorAll('.tb-dropdown.tb-open').forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+        li.classList.toggle('tb-open');
       });
     });
 
-    // клик по линк → затваря панела в мобилен layout
+    nav?.addEventListener('click', (e) => {
+      const toggle = e.target.closest?.('.tb-drop-toggle');
+      if (!toggle || !nav.contains(toggle)) return;
+      const li = toggle.closest('.tb-dropdown');
+      if (!li) return;
+      if (isMobile()) {
+        e.preventDefault();
+        e.stopPropagation();
+      } else if (toggle.dataset.dropdown !== 'toggle') {
+        return;
+      } else {
+        e.preventDefault();
+      }
+      document.querySelectorAll('.tb-dropdown.tb-open').forEach(x => { if (x !== li) x.classList.remove('tb-open'); });
+      li.classList.toggle('tb-open');
+    });
+
     nav?.querySelectorAll('.tb-link, .tb-drop-link').forEach(link => {
       link.addEventListener('click', () => {
+        if (isMobile() && link.classList.contains('tb-drop-toggle')) return;
         if (isMobile() && nav.classList.contains('tb-nav--open')) closeMobileMenu();
       });
     });

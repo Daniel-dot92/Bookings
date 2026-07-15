@@ -1,17 +1,48 @@
-// /app/api/book/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { calendar_v3 } from "googleapis";
 import { getCalendar, getSheets } from "@/app/lib/google";
 import { parseZoned } from "@/app/lib/datetime";
 import { sendBookingEmailSMTP } from "@/app/lib/email";
-import { calendar_v3 } from "googleapis";
+import {
+  buildManageBookingLink,
+  buildReminderScheduledId,
+  buildReviewScheduledId,
+  getReminderDueAtForAppointment,
+  getLocationSmsLinkForOffice,
+  getLocationIdForOffice,
+  getLocationLabelForOffice,
+  getReviewLinkForOffice,
+  isValidBookingEmail,
+  parseBooleanString,
+  readPositiveIntegerEnv,
+  shouldSuppressReminderForRecentBooking,
+} from "@/app/lib/appointment-communications";
+import {
+  type OfficeKey,
+  type TherapistKey,
+  type TherapistSelectionKey,
+  getOfficeDefinition,
+  getOfficeTherapists,
+  getTherapistDefinition,
+  getTherapistShift,
+  isOfficeKey,
+  isTherapistSelectionKey,
+} from "@/app/lib/booking-config";
+import { getCalendarIdForOffice } from "@/app/lib/booking-config.server";
+import {
+  BOOKING_SHEET_HEADERS,
+  REVIEW_DIRECTORY_HEADERS,
+  ensureSheetWithHeaders,
+  getManagedOfficeSheetConfigs,
+  getSheetConfigForOffice,
+} from "@/app/lib/sheets-config.server";
+import { normalizePhone } from "@/app/lib/sms";
 
-// Runtime настройки
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Типове
-type TherapistKey = "any" | "daniel" | "elitsa";
 type Payload = {
+  location: OfficeKey;
   date: string;
   time: string;
   duration: string | number;
@@ -21,17 +52,26 @@ type Payload = {
   phone: string;
   procedure: string;
   symptoms?: string;
-  therapist?: TherapistKey;
+  therapist?: TherapistSelectionKey;
+  reviewSmsConsent?: boolean | string;
 };
 
-// Работно време
-const SHIFT = {
-  daniel: { START: "13:00", END: "19:00" },
-  elitsa: { START: "08:00", END: "13:00" },
-};
 const MIN_LEAD_TIME_MINUTES = 120;
 
-// 📥 Четене на заявка
+function isGoogleCalendarNotFound(error: unknown) {
+  const status =
+    typeof error === "object" && error !== null
+      ? (error as { code?: number; response?: { status?: number } }).response?.status ??
+        (error as { code?: number }).code
+      : undefined;
+  const message =
+    typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : "";
+
+  return status === 404 || message === "Not Found";
+}
+
 async function readBody(req: NextRequest): Promise<Payload> {
   const ct = req.headers.get("content-type") || "";
   if (ct.includes("application/json")) return (await req.json()) as Payload;
@@ -40,6 +80,7 @@ async function readBody(req: NextRequest): Promise<Payload> {
   const get = (k: string) => fd.get(k)?.toString() ?? "";
 
   return {
+    location: (get("location") as OfficeKey) || "studentski-grad",
     date: get("date"),
     time: get("time"),
     duration: get("duration"),
@@ -49,11 +90,11 @@ async function readBody(req: NextRequest): Promise<Payload> {
     phone: get("phone"),
     procedure: get("procedure"),
     symptoms: get("symptoms") || undefined,
-    therapist: (get("therapist") as TherapistKey) || "any",
+    therapist: (get("therapist") as TherapistSelectionKey) || "any",
+    reviewSmsConsent: get("reviewSmsConsent") || "true",
   };
 }
 
-// 🕓 Форматиране на дати
 function toLocalISO(d: Date, timeZone: string) {
   const fmt = new Intl.DateTimeFormat("en-GB", {
     timeZone,
@@ -165,42 +206,143 @@ function getPublicBookingOrigin() {
   return "https://www.dmphysi0.com";
 }
 
-// 🚀 Главна функция
+function getNameCategoryLetter(name: string) {
+  const trimmed = name.trim();
+  for (const ch of trimmed) {
+    if (/\p{L}/u.test(ch)) return ch.toUpperCase();
+  }
+  return "#";
+}
+
+function normalizeEmailValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function coerceBooleanInput(value: string | boolean | undefined, fallback: boolean) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return parseBooleanString(value, fallback);
+  return fallback;
+}
+
+async function isReturningPatient(args: {
+  sheets: ReturnType<typeof getSheets>;
+  phone: string;
+  email: string;
+}) {
+  const normalizedPhone = normalizePhone(args.phone);
+  const normalizedEmail = normalizeEmailValue(args.email);
+  if (!normalizedPhone && !normalizedEmail) return false;
+
+  for (const sheetConfig of getManagedOfficeSheetConfigs()) {
+    if (!sheetConfig.spreadsheetId) continue;
+
+    try {
+      const response = await args.sheets.spreadsheets.values.get({
+        spreadsheetId: sheetConfig.spreadsheetId,
+        range: `${sheetConfig.bookingTabName}!A2:N`,
+      });
+
+      for (const row of response.data.values || []) {
+        const rowEmail = normalizeEmailValue(String(row[6] || ""));
+        const rowPhone = normalizePhone(String(row[7] || ""));
+        if (
+          (normalizedEmail && rowEmail && normalizedEmail === rowEmail) ||
+          (normalizedPhone && rowPhone && normalizedPhone === rowPhone)
+        ) {
+          return true;
+        }
+      }
+    } catch {
+      // ignore missing or inaccessible tabs and continue
+    }
+  }
+
+  return false;
+}
+
+function intervalFitsShift(
+  date: string,
+  startUtc: Date,
+  endUtc: Date,
+  shift: { start: string; end: string } | null
+) {
+  if (!shift) return false;
+  const shiftStart = parseZoned(date, shift.start);
+  const shiftEnd = parseZoned(date, shift.end);
+  return startUtc >= shiftStart && endUtc <= shiftEnd;
+}
+
 export async function POST(req: NextRequest) {
   try {
     console.log("[BOOK] stage: init");
 
-    const calId = process.env.BOOKING_CALENDAR_ID;
     const useSA = String(process.env.USE_SERVICE_ACCOUNT).toLowerCase() === "true";
-
-    if (!calId)
-      return NextResponse.json({ ok: false, error: "Липсва BOOKING_CALENDAR_ID." }, { status: 500 });
-
-    if (useSA && !process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64)
-      return NextResponse.json({ ok: false, error: "Липсва GOOGLE_SERVICE_ACCOUNT_JSON_BASE64." }, { status: 500 });
+    if (useSA && !process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64) {
+      return NextResponse.json(
+        { ok: false, error: "Липсва GOOGLE_SERVICE_ACCOUNT_JSON_BASE64." },
+        { status: 500 }
+      );
+    }
 
     console.log("[BOOK] stage: read-body");
     const body = await readBody(req);
-
     const {
-      date, time, duration,
-      firstName, lastName, email, phone,
-      procedure, symptoms,
+      location,
+      date,
+      time,
+      duration,
+      firstName,
+      lastName,
+      email,
+      phone,
+      procedure,
+      symptoms,
       therapist = "any",
+      reviewSmsConsent,
     } = body;
 
-    // 🧩 Валидация
-    if (!date || !time || !duration || !firstName || !lastName || !email || !phone || !procedure)
-      return NextResponse.json({ ok: false, error: "Липсват задължителни полета." }, { status: 400 });
+    if (!date || !time || !duration || !firstName || !lastName || !phone || !procedure) {
+      return NextResponse.json(
+        { ok: false, error: "Липсват задължителни полета." },
+        { status: 400 }
+      );
+    }
+
+    if (!isOfficeKey(location)) {
+      return NextResponse.json({ ok: false, error: "Невалиден обект." }, { status: 400 });
+    }
+
+    if (!isTherapistSelectionKey(therapist)) {
+      return NextResponse.json({ ok: false, error: "Невалиден терапевт." }, { status: 400 });
+    }
+
+    const calId = getCalendarIdForOffice(location);
+    if (!calId) {
+      return NextResponse.json(
+        { ok: false, error: "Липсва календар за избрания обект." },
+        { status: 500 }
+      );
+    }
 
     const dur = Number(duration);
-    if (![30, 60, 90].includes(dur))
-      return NextResponse.json({ ok: false, error: "Невалидна продължителност (30|60|90)." }, { status: 400 });
+    if (![30, 60, 90].includes(dur)) {
+      return NextResponse.json(
+        { ok: false, error: "Невалидна продължителност (30|60|90)." },
+        { status: 400 }
+      );
+    }
 
     const dNoon = parseZoned(date, "12:00");
-    const wd = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "Europe/Sofia" }).format(dNoon);
-    if (wd === "Sun")
-      return NextResponse.json({ ok: false, error: "Неделя е почивен ден. Моля, изберете друга дата." }, { status: 400 });
+    const dayName = new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      timeZone: "Europe/Sofia",
+    }).format(dNoon);
+    if (dayName === "Sun") {
+      return NextResponse.json(
+        { ok: false, error: "Неделя е почивен ден. Моля, изберете друга дата." },
+        { status: 400 }
+      );
+    }
 
     const now = new Date();
     const todayInSofia = ymdInSofia(now);
@@ -218,19 +360,44 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const within = (t: string, s: string, e: string) => t >= s && t <= e;
-    if (therapist === "daniel" && !within(time, SHIFT.daniel.START, SHIFT.daniel.END))
-      return NextResponse.json({ ok: false, error: "Часът е извън работното време на Даниел (13:00–19:00)." }, { status: 400 });
-
-    if (therapist === "elitsa" && !within(time, SHIFT.elitsa.START, SHIFT.elitsa.END))
-      return NextResponse.json({ ok: false, error: "Часът е извън работното време на Елица (08:00–13:00)." }, { status: 400 });
-
-    // 🕒 Дати и формати
     const tzid = "Europe/Sofia";
     const startUtc = parseZoned(date, time);
     const endUtc = new Date(startUtc.getTime() + dur * 60 * 1000);
+    const isSaturday = dayName === "Sat";
 
-    // Не допускаме запис в минал или в следващите 2 часа.
+    const availableTherapists = getOfficeTherapists(location);
+    if (availableTherapists.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "Няма конфигурирани терапевти за този обект." },
+        { status: 500 }
+      );
+    }
+
+    if (therapist !== "any" && !availableTherapists.includes(therapist)) {
+      return NextResponse.json(
+        { ok: false, error: "Избраният терапевт не работи в този обект." },
+        { status: 400 }
+      );
+    }
+
+    const matchingTherapists = (
+      therapist === "any" ? availableTherapists : [therapist]
+    ).filter((therapistKey) =>
+      intervalFitsShift(
+        date,
+        startUtc,
+        endUtc,
+        getTherapistShift(location, therapistKey, isSaturday)
+      )
+    );
+
+    if (matchingTherapists.length === 0) {
+      return NextResponse.json(
+        { ok: false, error: "Часът е извън работното време за избрания обект и терапевт." },
+        { status: 400 }
+      );
+    }
+
     const minLeadTime = new Date(Date.now() + MIN_LEAD_TIME_MINUTES * 60 * 1000);
     if (startUtc < minLeadTime) {
       return NextResponse.json(
@@ -248,9 +415,8 @@ export async function POST(req: NextRequest) {
     const dateText = formatBGDate(startUtc, tzid);
     const timeText = `${formatHHMM(startUtc, tzid)}–${formatHHMM(endUtc, tzid)} (${dur} мин)`;
 
-    // 🗓️ Проверка за заетост
     const cal = getCalendar();
-    console.log("[BOOK] stage: freebusy-check]");
+    console.log("[BOOK] stage: freebusy-check");
     const fb = await cal.freebusy.query({
       requestBody: {
         timeMin: startUtc.toISOString(),
@@ -261,7 +427,9 @@ export async function POST(req: NextRequest) {
     });
 
     const busy =
-      (fb.data.calendars?.[calId]?.busy as Array<{ start?: string | null; end?: string | null }> | undefined) || [];
+      (fb.data.calendars?.[calId]?.busy as Array<
+        { start?: string | null; end?: string | null }
+      > | undefined) || [];
 
     const overlaps = busy.some((b) => {
       const bStart = new Date(b.start ?? "");
@@ -269,13 +437,75 @@ export async function POST(req: NextRequest) {
       return startUtc < bEnd && endUtc > bStart;
     });
 
-    if (overlaps)
-      return NextResponse.json({ ok: false, error: "Този интервал току-що беше зает. Моля, изберете друг час." }, { status: 409 });
+    if (overlaps) {
+      return NextResponse.json(
+        { ok: false, error: "Този интервал току-що беше зает. Моля, изберете друг час." },
+        { status: 409 }
+      );
+    }
 
-    // 👤 Терапевт и описание
+    const office = getOfficeDefinition(location);
+    const officeName = office.copy.bg.name;
+    const address = office.copy.bg.address;
+    const mapsUrl = office.mapsUrl;
+    const officePhone = office.contactPhone;
+    const locationId = getLocationIdForOffice(location);
+    const locationLabel = getLocationLabelForOffice(location);
+    const locationSmsUrl = getLocationSmsLinkForOffice(location);
+    const officeMapsSmsUrl = locationSmsUrl || mapsUrl;
+    const bookingOrigin = getPublicBookingOrigin();
+    const manageBookingLink = buildManageBookingLink(bookingOrigin, location);
+    const reviewLink = getReviewLinkForOffice(location);
+    const officeReviewLink = reviewLink || "";
+    const hasValidEmail = isValidBookingEmail(email);
+    const reviewSmsConsentEnabled = coerceBooleanInput(reviewSmsConsent, true);
+    if (!hasValidEmail) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Моля, въведете валиден имейл адрес за потвърждението и напомнянето.",
+        },
+        { status: 400 }
+      );
+    }
+    let sheets: ReturnType<typeof getSheets> | null = null;
+    let returningPatient = false;
+    try {
+      sheets = getSheets();
+      returningPatient = await isReturningPatient({
+        sheets,
+        phone,
+        email,
+      });
+    } catch (error) {
+      console.warn("[BOOK] returning-patient lookup skipped:", error);
+    }
+
+    try {
+      await cal.calendars.get({ calendarId: calId });
+    } catch (error) {
+      if (isGoogleCalendarNotFound(error)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Онлайн записването за този обект е временно недостъпно. Моля, опитайте отново малко по-късно.",
+          },
+          { status: 503 }
+        );
+      }
+      throw error;
+    }
+
+    const resolvedTherapistKey: TherapistKey | null =
+      therapist === "any"
+        ? matchingTherapists.length === 1
+          ? matchingTherapists[0]
+          : null
+        : therapist;
     const therapistName =
-      therapist === "daniel" ? "Даниел Митев" :
-      therapist === "elitsa" ? "Елица Колева" : "Без значение";
+      resolvedTherapistKey
+        ? getTherapistDefinition(resolvedTherapistKey).name.bg
+        : "Без значение";
 
     const summary = `Резервация: ${firstName} ${lastName} – ${procedure} (${dur} мин)`;
     const description = `Име: ${firstName} ${lastName}
@@ -284,8 +514,12 @@ export async function POST(req: NextRequest) {
 Процедура: ${procedure}
 Симптоми: ${symptoms || "—"}
 Терапевт: ${therapistName}
+Обект: ${officeName}
 Източник: Уебсайт`;
 
+    const therapistContactPhone = resolvedTherapistKey
+      ? getTherapistDefinition(resolvedTherapistKey).contactPhone
+      : officePhone;
     const SEND_GCAL_INVITE = String(process.env.SEND_GCAL_INVITE).toLowerCase() === "true";
 
     const eventRequestBody: calendar_v3.Schema$Event = {
@@ -293,26 +527,90 @@ export async function POST(req: NextRequest) {
       description,
       start: { dateTime: startUtc.toISOString(), timeZone: tzid },
       end: { dateTime: endUtc.toISOString(), timeZone: tzid },
-      location: "София, ул. Професор Христо Данов 19",
+      location: address,
       guestsCanInviteOthers: false,
       guestsCanModify: false,
       guestsCanSeeOtherGuests: false,
     };
-    if (SEND_GCAL_INVITE) eventRequestBody.attendees = [{ email }];
+    if (SEND_GCAL_INVITE && hasValidEmail) eventRequestBody.attendees = [{ email }];
 
-    // ===== ДОБАВКА: метаданни за имейл за ревю (край + 15 мин) =====
-    const reviewDueAtISO = new Date(endUtc.getTime() + 15 * 60 * 1000).toISOString();
-    eventRequestBody.extendedProperties = {
-      private: {
-        reviewDueAt: reviewDueAtISO,
-        reviewEmailSent: "0",
-        customerEmail: email,
-        customerFirstName: firstName,
-        customerLastName: lastName || "",
-        customerPhone: phone,
-      },
+    const reviewDelayMinutes = readPositiveIntegerEnv("REVIEW_DELAY_MINUTES", 15);
+    const bookingCreatedAt = new Date();
+    const suppressReminder = shouldSuppressReminderForRecentBooking(
+      startUtc,
+      bookingCreatedAt
+    );
+    const reminderSchedule = getReminderDueAtForAppointment(startUtc);
+    const reminderKind = reminderSchedule.smsKind;
+    const reminderLeadMinutes = Math.max(
+      0,
+      Math.round((startUtc.getTime() - reminderSchedule.dueAt.getTime()) / 60_000)
+    );
+    const reviewDueAtISO = new Date(
+      endUtc.getTime() + reviewDelayMinutes * 60 * 1000
+    ).toISOString();
+    const reminderDueAtISO = reminderSchedule.dueAt.toISOString();
+
+    let privateMetadata: Record<string, string> = {
+      reviewDueAt: reviewDueAtISO,
+      reviewDelayMinutes: String(reviewDelayMinutes),
+      reviewEmailSent: "0",
+      reviewSmsSent: "0",
+      reminderDueAt: reminderDueAtISO,
+      reminderLeadMinutes: String(reminderLeadMinutes),
+      reminderSmsSent: "0",
+      reminder_sms_suppressed: suppressReminder ? "1" : "0",
+      reminder_sms_suppressed_reason: suppressReminder
+        ? "booked-same-or-previous-day"
+        : "",
+      booking_created_at: bookingCreatedAt.toISOString(),
+      customerEmail: email,
+      customerFirstName: firstName,
+      customerLastName: lastName || "",
+      customerPhone: phone,
+      procedureName: procedure,
+      therapistName,
+      officeKey: location,
+      officeName,
+      officeAddress: address,
+      officeMapsUrl: mapsUrl,
+      officeMapsSmsUrl,
+      officePhone,
+      bookingSource: "website",
+      patient_phone: normalizePhone(phone) || phone,
+      sms_consent: "0",
+      review_sms_consent: reviewSmsConsentEnabled ? "1" : "0",
+      therapist_id: resolvedTherapistKey || therapist || "",
+      location_id: locationId,
+      location_label: locationLabel,
+      appointment_start: startUtc.toISOString(),
+      appointment_end: endUtc.toISOString(),
+      appointment_status: "scheduled",
+      google_calendar_event_id: "",
+      appointment_id: "",
+      reminder_sms_scheduled_id: "",
+      same_day_reminder_sms_scheduled_id: "",
+      review_sms_scheduled_id: "",
+      review_requested_at: "",
+      manage_booking_link: manageBookingLink,
+      review_link: officeReviewLink,
+      same_day_reminder_enabled: "0",
+      same_day_reminder_lead_minutes: "0",
+      same_day_reminder_due_at: "",
+      is_returning_patient: returningPatient ? "1" : "0",
+      confirmation_sms_sent: "0",
+      confirmation_sms_skipped_reason: "sms-disabled",
+      reminderEmailSent: "0",
+      reminder_email_scheduled_id: "",
+      reminder_email_suppressed: suppressReminder ? "1" : "0",
+      reminder_email_suppressed_reason: suppressReminder
+        ? "booked-same-or-previous-day"
+        : "",
     };
-    // ===============================================================
+
+    eventRequestBody.extendedProperties = {
+      private: privateMetadata,
+    };
 
     console.log("[BOOK] stage: create-event");
     const created = await cal.events.insert({
@@ -323,33 +621,94 @@ export async function POST(req: NextRequest) {
     const eventId = created.data.id || "";
     console.log("[BOOK] stage: event-inserted", eventId);
 
-    // 🧾 Добавяне в Google Sheets
+    privateMetadata = {
+      ...privateMetadata,
+      appointment_id: eventId,
+      google_calendar_event_id: eventId,
+      reminder_email_scheduled_id: suppressReminder
+        ? ""
+        : buildReminderScheduledId(eventId, reminderKind, startUtc),
+      reminder_sms_scheduled_id: "",
+      same_day_reminder_sms_scheduled_id: "",
+      review_sms_scheduled_id: buildReviewScheduledId(
+        eventId,
+        "review_request_after_completed_appointment",
+        endUtc
+      ),
+    };
+
+    const confirmationSmsOk = true;
+    const confirmationSmsErr = "";
+
     let sheetsOk = true;
     let sheetsErr: string | undefined;
     try {
-      const spreadsheetId = process.env.SHEETS_SPREADSHEET_ID!;
-      const sheetName = process.env.SHEETS_TAB_NAME || "Bookings";
+      const sheetsClient = sheets ?? getSheets();
+      const sheetConfig = getSheetConfigForOffice(location);
+      const spreadsheetId = sheetConfig.spreadsheetId;
+      const sheetName = sheetConfig.bookingTabName;
+      const reviewDirectoryTabName = sheetConfig.reviewDirectoryTabName;
       if (!spreadsheetId) throw new Error("Липсва SHEETS_SPREADSHEET_ID");
 
-      const sheets = getSheets();
       const timestamp = new Intl.DateTimeFormat("bg-BG", {
         dateStyle: "short",
         timeStyle: "medium",
         timeZone: tzid,
       }).format(new Date());
 
+      await ensureSheetWithHeaders(
+        sheetsClient,
+        spreadsheetId,
+        sheetName,
+        BOOKING_SHEET_HEADERS
+      );
+
       console.log("[BOOK] stage: sheets-append");
-      await sheets.spreadsheets.values.append({
+      await sheetsClient.spreadsheets.values.append({
         spreadsheetId,
         range: `${sheetName}!A1`,
         valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: {
           values: [[
-            timestamp, date, time, dur,
-            firstName, lastName, email, phone,
-            procedure, symptoms || "", eventId,
-            therapistName, "website",
+            timestamp,
+            date,
+            time,
+            dur,
+            firstName,
+            lastName,
+            email,
+            phone,
+            procedure,
+            symptoms || "",
+            eventId,
+            therapistName,
+            officeName,
+            "website",
+          ]],
+        },
+      });
+
+      await ensureSheetWithHeaders(
+        sheetsClient,
+        spreadsheetId,
+        reviewDirectoryTabName,
+        REVIEW_DIRECTORY_HEADERS
+      );
+
+      const directoryName = `${firstName} ${lastName}`.trim().replace(/\s+/g, " ");
+      await sheetsClient.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${reviewDirectoryTabName}!A1`,
+        valueInputOption: "RAW",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [[
+            directoryName,
+            phone,
+            email,
+            `${date} ${time}`,
+            getNameCategoryLetter(directoryName),
           ]],
         },
       });
@@ -360,17 +719,17 @@ export async function POST(req: NextRequest) {
       console.error("[BOOK] Sheets append failed:", sheetsErr);
     }
 
-    // 📧 Изпращане на имейл потвърждение
-    let emailOk = true;
+    let emailOk = false;
     let emailErr: string | undefined;
-    try {
+    if (!hasValidEmail) {
+      emailErr = "No valid email address was provided.";
+      privateMetadata.confirmation_email_skipped_reason = "missing-or-invalid-email";
+    } else try {
       console.log("[BOOK] stage: send-email");
 
-      const address = "София, ул. Професор Христо Данов 19";
-      const mapsUrl = "https://maps.app.goo.gl/vFHqq2TFV7XRVSTd8";
-      const bookingOrigin = getPublicBookingOrigin();
       const calendarTitle = `DM PHYSIO - ${procedure}`;
       const calendarDetails = [
+        `Обект: ${officeName}`,
         `Терапевт: ${therapistName}`,
         `Процедура: ${procedure}`,
         `Дата: ${dateText}`,
@@ -405,9 +764,10 @@ export async function POST(req: NextRequest) {
         lastName,
         dateText,
         timeText,
-        therapist: therapist !== "any" ? therapistName : undefined,
+        therapist: resolvedTherapistKey ? therapistName : undefined,
         procedure,
         phone,
+        businessPhone: therapistContactPhone,
         address,
         notes: symptoms,
         eventUid: eventId || undefined,
@@ -415,6 +775,7 @@ export async function POST(req: NextRequest) {
         endISO,
         tzid,
         extraHtml: `
+          <p style="margin-top:12px;"><strong>Обект:</strong> ${officeName}</p>
           <p style="margin-top:16px;">
             <a href="${mapsUrl}" target="_blank"
                style="display:inline-block;margin-top:8px;padding:10px 16px;
@@ -442,15 +803,45 @@ export async function POST(req: NextRequest) {
         `,
       });
 
+      emailOk = true;
+      privateMetadata.confirmation_email_sent = "1";
+      privateMetadata.confirmation_email_sent_at = new Date().toISOString();
+      privateMetadata.confirmation_delivery_channel = "email";
       console.log("[BOOK] stage: email-sent");
     } catch (e: unknown) {
       emailOk = false;
       emailErr = e instanceof Error ? e.message : String(e);
+      privateMetadata.confirmation_email_error = emailErr.slice(0, 250);
       console.error("[BOOK] Email send failed:", emailErr);
     }
 
-    // ✅ Финален отговор
-    return NextResponse.json({ ok: true, eventId, sheetsOk, sheetsErr, emailOk, emailErr });
+    if (eventId) {
+      try {
+        await cal.events.patch({
+          calendarId: calId,
+          eventId,
+          requestBody: {
+            extendedProperties: {
+              private: privateMetadata,
+            },
+          },
+        });
+      } catch (error) {
+        console.error("[BOOK] Metadata patch failed:", error);
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      eventId,
+      sheetsOk,
+      sheetsErr,
+      confirmationSmsOk,
+      confirmationSmsErr,
+      emailOk,
+      emailErr,
+      therapistKey: resolvedTherapistKey,
+    });
   } catch (e) {
     console.error("[BOOK] ERROR:", e);
     const message = e instanceof Error ? e.message : "Грешка при записването.";

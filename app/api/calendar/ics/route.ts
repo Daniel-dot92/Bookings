@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function getDefaultIcsLocation() {
+  return (process.env.DM_PHYSIO_ADDRESS || "").trim() || "DM PHYSIO, Sofia";
+}
+
 function toUtcZ(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
@@ -38,7 +42,7 @@ export async function GET(req: NextRequest) {
   const end = searchParams.get("end") || "";
   const location = safeText(
     searchParams.get("location"),
-    "София, ул. Проф. Христо Данов 19",
+    getDefaultIcsLocation(),
     180
   );
   const details = safeText(

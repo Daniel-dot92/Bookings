@@ -15,6 +15,7 @@ export type BookingEmailProps = {
   therapist?: string;   // РёРјРµ РЅР° С‚РµСЂР°РїРµРІС‚Р° (РѕРїС†.)
   procedure: string;    // СѓСЃР»СѓРіР°/РїСЂРѕС†РµРґСѓСЂР°
   phone: string;        // С‚РµР»РµС„РѕРЅ РЅР° РєР»РёРµРЅС‚Р°
+  businessPhone?: string;
   address?: string;     // РїРѕ РїРѕРґСЂР°Р·Р±РёСЂР°РЅРµ: РЎРѕС„РёСЏ, СѓР». РџСЂРѕС„. РҐСЂРёСЃС‚Рѕ Р”Р°РЅРѕРІ 19
   notes?: string;       // СЃРёРјРїС‚РѕРјРё/Р±РµР»РµР¶РєРё (РѕРїС†.)
   eventUid?: string;    // UID Р·Р° .ics (РѕРїС†.)
@@ -35,9 +36,19 @@ function esc(s: string) {
     .replace(/>/g, "&gt;");
 }
 
+function getDefaultBusinessAddress() {
+  return (process.env.DM_PHYSIO_ADDRESS || "").trim() || "DM PHYSIO, Sofia";
+}
+
+function getDefaultBusinessPhone() {
+  return (process.env.DM_PHYSIO_CONTACT_PHONE || "").trim() || "0883688414";
+}
+
 /** HTML шаблон на имейла */
 function buildEmailHTML(p: BookingEmailProps) {
-  const address = p.address ?? "София, ул. Проф. Христо Данов 19";
+  const address = p.address ?? getDefaultBusinessAddress();
+  const businessPhone = p.businessPhone?.trim() || getDefaultBusinessPhone();
+  const businessPhoneHref = businessPhone.replace(/\s+/g, "");
 
   const therapistLine = p.therapist
     ? `<p style="margin:0"><strong>Терапевт:</strong> ${esc(p.therapist)}</p>`
@@ -72,8 +83,8 @@ function buildEmailHTML(p: BookingEmailProps) {
 
       <p style="margin:12px 0;font-size:15px;">
         Ако нещо се промени, обадете се на 
-        <a href="tel:0883688414" style="color:#0284c7;text-decoration:none;font-weight:600;">
-          0883 688 414
+        <a href="tel:${esc(businessPhoneHref)}" style="color:#0284c7;text-decoration:none;font-weight:600;">
+          ${esc(businessPhone)}
         </a>.
       </p>
 
@@ -115,7 +126,7 @@ function buildICS(p: BookingEmailProps) {
   ].filter(Boolean) as string[];
 
   const description = descriptionLines.join("\n");
-  const location = p.address ?? "София, ул. Проф. Христо Данов 19";
+  const location = p.address ?? getDefaultBusinessAddress();
 
   const escapeICS = (s: string) =>
     s.replace(/([\\;,])/g, "\\$1").replace(/\r?\n/g, "\\n");
@@ -190,6 +201,69 @@ export async function sendBookingEmailSMTP(p: BookingEmailProps) {
 
   return { messageId: info?.messageId as string | undefined };
 }
+
+export async function sendAppointmentReminderEmailSMTP(p: {
+  to: string;
+  firstName: string;
+  date: Date;
+  therapist: string;
+  location: string;
+  locationUrl: string;
+  contactPhone: string;
+  kind: "appointment_reminder_24h" | "appointment_reminder_same_day";
+}) {
+  const env = process.env as Record<string, string | undefined>;
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM } = env;
+  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+    throw new Error("Missing SMTP_* environment variables");
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: Number(SMTP_PORT),
+    secure: Number(SMTP_PORT) === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    logger: true,
+    debug: true,
+  });
+  await transporter.verify();
+
+  const dayLabel = p.kind === "appointment_reminder_same_day" ? "днес" : "утре";
+  const timeText = p.date.toLocaleTimeString("bg-BG", {
+    timeZone: "Europe/Sofia",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const phoneHref = p.contactPhone.replace(/\s+/g, "");
+  const html = `<!doctype html>
+<html>
+<body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;background:#fff;margin:0;padding:20px">
+  <div style="max-width:600px;margin:auto">
+    <h2 style="margin:0 0 12px;color:#111827">Напомняне за вашия час</h2>
+    <p style="margin:0 0 14px">Здравейте, ${esc(p.firstName)},</p>
+    <p style="margin:0 0 16px">Напомняме ви, че имате запазен час ${dayLabel} в <strong>${esc(timeText)}</strong> при <strong>${esc(p.therapist)}</strong>.</p>
+    <div style="border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:16px 0;background:#f8fafc">
+      <p style="margin:0 0 10px"><strong>Обект:</strong> ${esc(p.location)}</p>
+      <a href="${esc(p.locationUrl)}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:11px 16px;border-radius:10px;font-weight:600">Навигация с Google Maps</a>
+    </div>
+    <p style="margin:12px 0">За промяна или отказ се обадете на <a href="tel:${esc(phoneHref)}" style="color:#0284c7;font-weight:600;text-decoration:none">${esc(p.contactPhone)}</a>.</p>
+    <p style="margin:0;color:#334155">Поздрави,<br><strong>DM PHYSIO</strong></p>
+  </div>
+</body>
+</html>`;
+
+  const info = await transporter.sendMail({
+    from: SMTP_USER,
+    sender: SMTP_USER,
+    replyTo: EMAIL_FROM && EMAIL_FROM.includes("@") ? EMAIL_FROM : SMTP_USER,
+    to: p.to,
+    subject: `Напомняне за часа ви ${dayLabel} в ${timeText} - DM PHYSIO`,
+    html,
+  });
+
+  return { messageId: info?.messageId as string | undefined };
+}
+
 // ========= Имейл за ревю след посещение =========
 export async function sendReviewRequestEmailSMTP(p: {
   to: string;
