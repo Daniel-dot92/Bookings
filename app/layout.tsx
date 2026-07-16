@@ -36,14 +36,45 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 
         {children}
 
-        <Script id="hotjar" strategy="afterInteractive">{`
-          (function(h,o,t,j,a,r){
-            h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};
-            h._hjSettings={hjid:${hotjarId},hjsv:6};
-            a=o.getElementsByTagName('head')[0];
-            r=o.createElement('script');r.async=1;r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;
-            a.appendChild(r);
-          })(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');
+        <Script id="hotjar-consent" strategy="afterInteractive">{`
+          (function () {
+            var consentKey = 'dm_cookie_consent_v1';
+
+            function hasAnalyticsConsent() {
+              try {
+                var consent = JSON.parse(localStorage.getItem(consentKey) || 'null');
+                return Boolean(consent && consent.analytics === true);
+              } catch (_) {
+                return false;
+              }
+            }
+
+            function respectsDoNotTrack() {
+              try {
+                return navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.msDoNotTrack === '1';
+              } catch (_) {
+                return false;
+              }
+            }
+
+            function loadHotjar() {
+              if (window.__dmHotjarLoaded || !hasAnalyticsConsent() || respectsDoNotTrack()) return;
+              window.__dmHotjarLoaded = true;
+
+              (function(h,o,t,j,a,r){
+                h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};
+                h._hjSettings={hjid:${hotjarId},hjsv:6};
+                a=o.getElementsByTagName('head')[0];
+                r=o.createElement('script');r.async=1;r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;
+                a.appendChild(r);
+              })(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');
+            }
+
+            loadHotjar();
+            window.addEventListener('dm-cookie-consent-change', function (event) {
+              if (event.detail && event.detail.analytics === true) loadHotjar();
+            });
+          })();
         `}</Script>
         <Script src="/booking-topbar.js" strategy="afterInteractive" />
       </body>

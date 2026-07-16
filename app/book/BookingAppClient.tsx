@@ -727,7 +727,10 @@ export default function BookingAppClient({
     return (
       <div className="min-h-screen bg-[linear-gradient(180deg,#ecfdf5_0%,#f8fafc_40%,#ffffff_100%)]">
         <div className="mx-auto max-w-4xl px-4 py-8 md:py-12">
-          <div className="overflow-hidden rounded-[34px] border border-emerald-200/80 bg-white shadow-[0_35px_100px_rgba(16,185,129,0.14)]">
+          <div
+            data-hj-suppress
+            className="overflow-hidden rounded-[34px] border border-emerald-200/80 bg-white shadow-[0_35px_100px_rgba(16,185,129,0.14)]"
+          >
             <div className="grid lg:grid-cols-[1.1fr_0.9fr]">
               <div className="bg-[radial-gradient(circle_at_top_left,_rgba(52,211,153,0.24),_transparent_34%),linear-gradient(135deg,#022c22_0%,#064e3b_55%,#0f766e_100%)] px-6 py-7 text-white md:px-8 md:py-9">
                 <div className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-100">
@@ -1320,7 +1323,7 @@ export default function BookingAppClient({
                   </div>
                 </div>
 
-                <form onSubmit={submit} className="space-y-4 px-6 py-6">
+                <form data-hj-suppress onSubmit={submit} className="space-y-4 px-6 py-6">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-slate-700">
