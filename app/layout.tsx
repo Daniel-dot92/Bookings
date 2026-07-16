@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
   description: "DM PHYSIO \u2013 \u043e\u043d\u043b\u0430\u0439\u043d \u0437\u0430\u043f\u0438\u0441\u0432\u0430\u043d\u0435 \u043d\u0430 \u0447\u0430\u0441",
   icons: {
-    icon: "/favicon.ico?v=20260716-old",
+    icon: "/favicon-original.ico?v=20260717",
   },
 };
 
