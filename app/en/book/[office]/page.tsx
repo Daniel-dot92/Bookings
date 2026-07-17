@@ -5,6 +5,10 @@ import {
   type OfficeKey,
   getOfficeDefinition,
 } from "@/app/lib/booking-config";
+import {
+  BOOKING_SOCIAL_IMAGE,
+  BOOKING_SOCIAL_IMAGE_URL,
+} from "@/app/lib/booking-social";
 import { getBookingUrl } from "@/app/lib/site";
 
 const OFFICE_SLUGS: Record<string, OfficeKey> = {
@@ -42,10 +46,27 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const definition = getOfficeDefinition(officeKey);
   const officeCopy = definition.copy.en;
   const canonical = `${getEnBookingUrl()}/${office}`;
+  const title = `Book an appointment - ${officeCopy.district} | DM PHYSIO`;
+  const description = `Book an appointment at DM PHYSIO, ${officeCopy.address}. Choose a therapist, date and available time for this studio.`;
 
   return {
-    title: `Book an appointment - ${officeCopy.district} | DM PHYSIO`,
-    description: `Book an appointment at DM PHYSIO, ${officeCopy.address}. Choose a therapist, date and available time for this studio.`,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: canonical,
+      siteName: "DM PHYSIO",
+      locale: "en_GB",
+      type: "website",
+      images: [BOOKING_SOCIAL_IMAGE],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [BOOKING_SOCIAL_IMAGE_URL],
+    },
     alternates: {
       canonical,
       languages: {
