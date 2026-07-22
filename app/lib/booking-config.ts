@@ -105,11 +105,8 @@ export const OFFICE_DEFINITIONS: Record<OfficeKey, OfficeDefinition> = {
         cardTag: "Mladost 1A",
       },
     },
-    mapsUrl: "https://maps.app.goo.gl/uwdBmrPhRCbU1aQn7",
-    reviewStatus: {
-      bg: "Нов обект",
-      en: "New location",
-    },
+    mapsUrl: "https://maps.app.goo.gl/xYi2heoA2kY44wLq5",
+    reviewsUrl: "https://g.page/r/CVRkl_pUfEceEAE/review",
     photo: "/baner mladost.webp",
     contactPhone: "0898485320",
     theme: {
