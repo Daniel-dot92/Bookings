@@ -41,6 +41,9 @@ export const REVIEW_SENT_LOG_HEADERS = [
   "Event ID",
   "Office",
   "Review Link",
+  "Visit Number",
+  "Channel",
+  "Clicked At",
 ];
 
 type OfficeSheetConfig = {

@@ -13,7 +13,6 @@ import {
   getLocationLabelForOffice,
   getReviewLinkForOffice,
   isValidBookingEmail,
-  parseBooleanString,
   readPositiveIntegerEnv,
   shouldSuppressReminderForRecentBooking,
 } from "@/app/lib/appointment-communications";
@@ -53,7 +52,6 @@ type Payload = {
   procedure: string;
   symptoms?: string;
   therapist?: TherapistSelectionKey;
-  reviewSmsConsent?: boolean | string;
 };
 
 const MIN_LEAD_TIME_MINUTES = 120;
@@ -91,7 +89,6 @@ async function readBody(req: NextRequest): Promise<Payload> {
     procedure: get("procedure"),
     symptoms: get("symptoms") || undefined,
     therapist: (get("therapist") as TherapistSelectionKey) || "any",
-    reviewSmsConsent: get("reviewSmsConsent") || "true",
   };
 }
 
@@ -218,12 +215,6 @@ function normalizeEmailValue(value: string) {
   return value.trim().toLowerCase();
 }
 
-function coerceBooleanInput(value: string | boolean | undefined, fallback: boolean) {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") return parseBooleanString(value, fallback);
-  return fallback;
-}
-
 async function isReturningPatient(args: {
   sheets: ReturnType<typeof getSheets>;
   phone: string;
@@ -298,7 +289,6 @@ export async function POST(req: NextRequest) {
       procedure,
       symptoms,
       therapist = "any",
-      reviewSmsConsent,
     } = body;
 
     if (!date || !time || !duration || !firstName || !lastName || !phone || !procedure) {
@@ -458,7 +448,6 @@ export async function POST(req: NextRequest) {
     const reviewLink = getReviewLinkForOffice(location);
     const officeReviewLink = reviewLink || "";
     const hasValidEmail = isValidBookingEmail(email);
-    const reviewSmsConsentEnabled = coerceBooleanInput(reviewSmsConsent, true);
     if (!hasValidEmail) {
       return NextResponse.json(
         {
@@ -534,7 +523,10 @@ export async function POST(req: NextRequest) {
     };
     if (SEND_GCAL_INVITE && hasValidEmail) eventRequestBody.attendees = [{ email }];
 
-    const reviewDelayMinutes = readPositiveIntegerEnv("REVIEW_DELAY_MINUTES", 15);
+    const reviewDelayMinutes = Math.max(
+      15,
+      readPositiveIntegerEnv("REVIEW_DELAY_MINUTES", 15)
+    );
     const bookingCreatedAt = new Date();
     const suppressReminder = shouldSuppressReminderForRecentBooking(
       startUtc,
@@ -579,7 +571,7 @@ export async function POST(req: NextRequest) {
       bookingSource: "website",
       patient_phone: normalizePhone(phone) || phone,
       sms_consent: "0",
-      review_sms_consent: reviewSmsConsentEnabled ? "1" : "0",
+      review_policy: "visit-1-and-5",
       therapist_id: resolvedTherapistKey || therapist || "",
       location_id: locationId,
       location_label: locationLabel,

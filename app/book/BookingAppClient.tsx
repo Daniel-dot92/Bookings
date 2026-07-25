@@ -24,7 +24,6 @@ type FormData = {
   phone: string;
   procedure: string;
   symptoms?: string;
-  reviewSmsConsent: boolean;
 };
 
 type BookAPIResponse = {
@@ -101,7 +100,6 @@ type Copy = {
   procedurePlaceholder: string;
   emailPlaceholder: string;
   symptomsPlaceholder: string;
-  reviewSmsConsentLabel: string;
   cancel: string;
   submit: string;
   submitting: string;
@@ -167,7 +165,6 @@ const COPY: Record<BookingLocale, Copy> = {
     emailPlaceholder: "your@email.com",
     symptomsPlaceholder:
       "Опишете болката, местоположение/разпространение, от кога е, кое я усилва/облекчава, предишни травми/изследвания и каква е целта Ви…",
-    reviewSmsConsentLabel: "Съгласен/на съм да получа последващ имейл за ревю след посещението.",
     cancel: "Откажи",
     submit: "Запази",
     submitting: "Изпращане…",
@@ -232,7 +229,6 @@ const COPY: Record<BookingLocale, Copy> = {
     emailPlaceholder: "your@email.com",
     symptomsPlaceholder:
       "Describe the pain, location/radiation, when it started, what makes it worse or easier, previous injuries/tests and your goal…",
-    reviewSmsConsentLabel: "I agree to receive a follow-up review request by email after the appointment.",
     cancel: "Cancel",
     submit: "Book",
     submitting: "Sending…",
@@ -306,7 +302,6 @@ export default function BookingAppClient({
     phone: "",
     procedure: "",
     symptoms: "",
-    reviewSmsConsent: true,
   });
 
   const listRef = React.useRef<HTMLDivElement>(null);
@@ -598,7 +593,6 @@ export default function BookingAppClient({
         phone: "",
         procedure: "",
         symptoms: "",
-        reviewSmsConsent: true,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : copy.loadingSlots);
@@ -1404,18 +1398,6 @@ export default function BookingAppClient({
                       value={form.symptoms || ""}
                       onChange={(e) => setForm({ ...form, symptoms: e.target.value })}
                     />
-                  </div>
-
-                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                    <label className="flex items-start gap-3 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-                        checked={form.reviewSmsConsent}
-                        onChange={(e) => setForm({ ...form, reviewSmsConsent: e.target.checked })}
-                      />
-                      <span>{copy.reviewSmsConsentLabel}</span>
-                    </label>
                   </div>
 
                   {error && (

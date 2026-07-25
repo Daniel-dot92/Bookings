@@ -4,7 +4,6 @@ import { getManagedOffices } from "@/app/lib/booking-config.server";
 import { sendReviewRequestEmailSMTP } from "@/app/lib/email";
 import {
   REVIEW_DIRECTORY_HEADERS,
-  REVIEW_SENT_LOG_HEADERS,
   ensureSheetWithHeaders,
   getSheetConfigForOffice,
 } from "@/app/lib/sheets-config.server";
@@ -15,12 +14,33 @@ import {
   readPositiveIntegerEnv,
 } from "@/app/lib/appointment-communications";
 import {
-  isSmsConfigured,
+  type PatientVisitRecord,
+  type ReviewPrivateProps,
+  buildPatientVisitIndex,
+  buildReviewEventKey,
+  buildReviewMilestoneKey,
+  extractReviewEmail,
+  extractReviewName,
+  extractReviewPhone,
+  getReviewEventStartMs,
+  getReviewPrivateProps,
+  isReviewMilestone,
+  normalizeReviewEmail,
+} from "@/app/lib/review-policy";
+import {
+  appendReviewRequestLog,
+  readReviewHistory,
+  type ReviewHistory,
+} from "@/app/lib/review-log.server";
+import { createReviewTrackingToken } from "@/app/lib/review-tracking.server";
+import { getBookingUrl } from "@/app/lib/site";
+import {
+  isReviewSmsConfigured,
   normalizePhone,
   sendReviewRequestSMS,
 } from "@/app/lib/sms";
 
-type ReviewPrivateProps = Record<string, string> & {
+type CalendarReviewPrivateProps = ReviewPrivateProps & {
   appointment_status?: string;
   appointment_id?: string;
   appointment_start?: string;
@@ -31,12 +51,14 @@ type ReviewPrivateProps = Record<string, string> & {
   customerFirstName?: string;
   customerLastName?: string;
   customerEmail?: string;
-  review_sms_consent?: string;
   reviewSmsTo?: string;
   reviewDueAt?: string;
   reviewDelayMinutes?: string;
   reviewSmsSent?: string;
   reviewSmsSentAt?: string;
+  reviewSmsSid?: string;
+  reviewSmsError?: string;
+  reviewSmsLastAttemptAt?: string;
   reviewEmailSent?: string;
   reviewEmailSentAt?: string;
   reviewEmailMessageId?: string;
@@ -44,17 +66,22 @@ type ReviewPrivateProps = Record<string, string> & {
   reviewEmailLastAttemptAt?: string;
   review_requested_at?: string;
   review_sms_scheduled_id?: string;
+  review_visit_number?: string;
+  review_skip_reason?: string;
+  review_skipped_at?: string;
+  review_tracking_url?: string;
+  review_delivery_channel?: string;
   location_id?: string;
   officeKey?: string;
 };
 
 function getPrivateProps(ev: {
   extendedProperties?: { private?: Record<string, string> | null } | null;
-}): ReviewPrivateProps {
-  return (ev.extendedProperties?.private ?? {}) as ReviewPrivateProps;
+}): CalendarReviewPrivateProps {
+  return getReviewPrivateProps(ev) as CalendarReviewPrivateProps;
 }
 
-function serializePrivateProps(priv: ReviewPrivateProps) {
+function serializePrivateProps(priv: CalendarReviewPrivateProps) {
   const cleaned: Record<string, string> = {};
   for (const [key, value] of Object.entries(priv)) {
     if (typeof value === "string") cleaned[key] = value;
@@ -84,63 +111,6 @@ function parseBool(value: string | null) {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
-}
-
-function normalizeEmail(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function extractNormalizedPhones(text?: string | null) {
-  if (!text) return [];
-  const matches =
-    text.match(/(?:\+359|00359|0)\s*8\d(?:[\s\-()]*\d){7}/g) ?? [];
-
-  const normalized = new Set<string>();
-  for (const match of matches) {
-    const phone = normalizePhone(match);
-    if (phone) normalized.add(phone);
-  }
-
-  return [...normalized];
-}
-
-function extractEmailFromDescription(description?: string | null) {
-  if (!description) return "";
-  const match = description.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  return match ? match[0] : "";
-}
-
-function extractPhoneFromEvent(
-  priv: ReviewPrivateProps,
-  summary?: string | null,
-  description?: string | null
-) {
-  const direct = normalizePhone(priv.patient_phone || "");
-  if (direct) return direct;
-
-  const legacy = normalizePhone(priv.customerPhone || priv.reviewSmsTo || "");
-  if (legacy) return legacy;
-
-  const fromDescription = extractNormalizedPhones(description);
-  if (fromDescription.length > 0) return fromDescription[0];
-
-  const fromSummary = extractNormalizedPhones(summary);
-  if (fromSummary.length > 0) return fromSummary[0];
-
-  return "";
-}
-
-function extractEmailFromEvent(
-  priv: ReviewPrivateProps,
-  description?: string | null
-) {
-  const direct = normalizeEmail(priv.customerEmail || "");
-  if (direct) return direct;
-
-  const fromDescription = normalizeEmail(extractEmailFromDescription(description));
-  if (fromDescription) return fromDescription;
-
-  return "";
 }
 
 function normalizeTenDigitPhone(value: string) {
@@ -183,25 +153,6 @@ function extractTenDigitPhoneFromEvent(
   if (fromSummary.length > 0) return fromSummary[0];
 
   return "";
-}
-
-function extractDirectoryName(
-  priv: ReviewPrivateProps,
-  summary?: string | null
-) {
-  const fromMeta = `${(priv.customerFirstName || "").trim()} ${(priv.customerLastName || "").trim()}`
-    .trim()
-    .replace(/\s+/g, " ");
-  if (fromMeta) return fromMeta;
-
-  let s = (summary || "").trim();
-  s = s.replace(/^Резервация:\s*/i, "");
-  s = s.replace(/^Reservation:\s*/i, "");
-  s = s.replace(/(?:\+359|00359|0)?\s*8\d(?:[\s\-()]*\d){7}/g, "");
-  s = s.replace(/\s+[–-]\s*$/, "");
-  s = s.trim().replace(/\s+/g, " ");
-
-  return s || "Неизвестен";
 }
 
 function formatDirectoryBookedAt(start?: {
@@ -249,9 +200,9 @@ function getReviewDueAt(
   end: Date,
   defaultDelayMinutes: number
 ) {
-  const delayMinutes = readPositiveIntegerEnv(
-    "REVIEW_DELAY_MINUTES",
-    defaultDelayMinutes
+  const delayMinutes = Math.max(
+    defaultDelayMinutes,
+    readPositiveIntegerEnv("REVIEW_DELAY_MINUTES", defaultDelayMinutes)
   );
   const stored = priv.reviewDueAt ? new Date(priv.reviewDueAt) : null;
   const computed = new Date(end.getTime() + delayMinutes * 60 * 1000);
@@ -266,6 +217,47 @@ function getReviewDueAt(
   return { dueAt: computed, delayMinutes };
 }
 
+function getReviewAutomationStartAt() {
+  const raw = (process.env.REVIEW_AUTOMATION_START_AT || "").trim();
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function readBookingContactsFromSheet(args: {
+  sheets: ReturnType<typeof getSheets>;
+  spreadsheetId: string;
+  tabName: string;
+}) {
+  const contacts = new Map<string, { name: string; email: string }>();
+
+  try {
+    const response = await args.sheets.spreadsheets.values.get({
+      spreadsheetId: args.spreadsheetId,
+      range: `${args.tabName}!A2:N`,
+    });
+
+    for (const row of response.data.values || []) {
+      const phone = normalizePhone(String(row[7] || ""));
+      const email = normalizeReviewEmail(String(row[6] || ""));
+      if (!phone || !email) continue;
+
+      const name = `${String(row[4] || "").trim()} ${String(row[5] || "").trim()}`
+        .trim()
+        .replace(/\s+/g, " ");
+      contacts.set(phone, {
+        name: name || "Неизвестен",
+        email,
+      });
+    }
+  } catch {
+    // Missing legacy tabs should not stop the review scan.
+  }
+
+  return contacts;
+}
+
 async function ensureReviewSmsSheet(
   sheets: ReturnType<typeof getSheets>,
   spreadsheetId: string,
@@ -274,73 +266,13 @@ async function ensureReviewSmsSheet(
   await ensureSheetWithHeaders(sheets, spreadsheetId, tabName, REVIEW_DIRECTORY_HEADERS);
 }
 
-async function ensureReviewSentLogSheet(
-  sheets: ReturnType<typeof getSheets>,
-  spreadsheetId: string,
-  tabName: string
-) {
-  await ensureSheetWithHeaders(sheets, spreadsheetId, tabName, REVIEW_SENT_LOG_HEADERS);
-}
-
-async function readReviewSentPhonesFromSheet(args: {
-  sheets: ReturnType<typeof getSheets>;
-  spreadsheetId: string;
-  tabName: string;
-}) {
-  const phones = new Set<string>();
-
-  try {
-    const response = await args.sheets.spreadsheets.values.get({
-      spreadsheetId: args.spreadsheetId,
-      range: `${args.tabName}!A2:F`,
-    });
-
-    for (const row of response.data.values || []) {
-      const normalized = normalizePhone(String(row[1] || ""));
-      if (normalized) phones.add(normalized);
-    }
-  } catch {
-    // ignore empty or missing rows; the sheet is ensured by the caller
-  }
-
-  return phones;
-}
-
-async function appendReviewSentLog(args: {
-  sheets: ReturnType<typeof getSheets>;
-  spreadsheetId: string;
-  tabName: string;
-  sentAt: string;
-  phone: string;
-  name: string;
-  eventId: string;
-  officeKey: string;
-  reviewLink: string;
-}) {
-  await args.sheets.spreadsheets.values.append({
-    spreadsheetId: args.spreadsheetId,
-    range: `${args.tabName}!A1`,
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: {
-      values: [[
-        args.sentAt,
-        args.phone,
-        args.name,
-        args.eventId,
-        args.officeKey,
-        args.reviewLink,
-      ]],
-    },
-  });
-}
-
 async function syncDirectorySheetFromCalendar(args: {
   calendar: ReturnType<typeof getCalendar>;
   managedOffice: ReturnType<typeof getManagedOffices>[number];
   sheets: ReturnType<typeof getSheets>;
   spreadsheetId: string;
   tabName: string;
+  writeSheet?: boolean;
 }) {
   const byPhone = new Map<
     string,
@@ -352,6 +284,7 @@ async function syncDirectorySheetFromCalendar(args: {
       category: string;
     }
   >();
+  const visits: PatientVisitRecord[] = [];
 
   let pageToken: string | undefined;
 
@@ -367,15 +300,26 @@ async function syncDirectorySheetFromCalendar(args: {
     pageToken = res.data.nextPageToken || undefined;
 
     for (const ev of res.data.items || []) {
-      if (ev.status === "cancelled") continue;
+      if (ev.status === "cancelled" || !ev.id) continue;
 
       const priv = getPrivateProps(ev);
-      const phone = extractTenDigitPhoneFromEvent(priv, ev.summary, ev.description);
-      if (!phone) continue;
+      const explicitStatus = (priv.appointment_status || "").trim().toLowerCase();
+      if (explicitStatus === "cancelled" || explicitStatus === "no_show") {
+        continue;
+      }
+      const phone = extractReviewPhone(priv, ev.summary, ev.description);
+      const directoryPhone = extractTenDigitPhoneFromEvent(
+        priv,
+        ev.summary,
+        ev.description
+      );
+      if (!phone || !directoryPhone) continue;
 
-      const name = extractDirectoryName(priv, ev.summary);
-      const email = normalizeEmail(
-        priv.customerEmail || extractEmailFromDescription(ev.description)
+      const name = extractReviewName(priv, ev.summary);
+      const email = extractReviewEmail(
+        priv,
+        ev.description,
+        ev.attendees
       );
       const bookedAt = formatDirectoryBookedAt(ev.start);
       const category = getNameCategoryLetter(name);
@@ -385,9 +329,29 @@ async function syncDirectorySheetFromCalendar(args: {
         ? Number.MIN_SAFE_INTEGER
         : new Date(sortSource).getTime();
 
-      const prev = byPhone.get(phone);
+      visits.push({
+        eventId: ev.id,
+        officeKey: args.managedOffice.officeKey,
+        phone,
+        name,
+        email,
+        startMs: getReviewEventStartMs(ev),
+        clickedReviewLink: priv.review_link_clicked === "1",
+        sentReviewRequest:
+          priv.reviewEmailSent === "1" || priv.reviewSmsSent === "1",
+      });
+
+      const prev = byPhone.get(directoryPhone);
       if (!prev || sortMs > prev.sortMs) {
-        byPhone.set(phone, { name, email, bookedAt, sortMs, category });
+        byPhone.set(directoryPhone, {
+          name,
+          email: email || prev?.email || "",
+          bookedAt,
+          sortMs,
+          category,
+        });
+      } else if (email && !prev.email) {
+        byPhone.set(directoryPhone, { ...prev, email });
       }
     }
   } while (pageToken);
@@ -406,21 +370,23 @@ async function syncDirectorySheetFromCalendar(args: {
     )
     .map((r) => [r[0], r[1], r[2], r[3], r[4]]);
 
-  await args.sheets.spreadsheets.values.clear({
-    spreadsheetId: args.spreadsheetId,
-    range: `${args.tabName}!A2:E`,
-  });
-
-  if (rows.length > 0) {
-    await args.sheets.spreadsheets.values.update({
+  if (args.writeSheet !== false) {
+    await args.sheets.spreadsheets.values.clear({
       spreadsheetId: args.spreadsheetId,
       range: `${args.tabName}!A2:E`,
-      valueInputOption: "RAW",
-      requestBody: { values: rows },
     });
+
+    if (rows.length > 0) {
+      await args.sheets.spreadsheets.values.update({
+        spreadsheetId: args.spreadsheetId,
+        range: `${args.tabName}!A2:E`,
+        valueInputOption: "RAW",
+        requestBody: { values: rows },
+      });
+    }
   }
 
-  return { rowsWritten: rows.length };
+  return { rowsWritten: rows.length, visits };
 }
 
 export const dynamic = "force-dynamic";
@@ -433,8 +399,6 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const dryRun = parseBool(url.searchParams.get("dryRun"));
-  const testSms = parseBool(url.searchParams.get("testSms"));
-  const smsReady = isSmsConfigured();
 
   const managedOffices = getManagedOffices();
   if (managedOffices.length === 0) {
@@ -444,46 +408,24 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (testSms) {
-    if (!smsReady) {
-      return NextResponse.json(
-        { ok: false, mode: "testSms", error: "SMS is not configured." },
-        { status: 400 }
-      );
-    }
-
-    const rawPhone = url.searchParams.get("testTo") || "";
-    const to = normalizePhone(rawPhone);
-    if (!to) {
-      return NextResponse.json(
-        { ok: false, mode: "testSms", error: "Invalid testTo phone format." },
-        { status: 400 }
-      );
-    }
-
-    const officeKey = managedOffices[0]?.officeKey || "studentski-grad";
-    const reviewLink = getReviewLinkForOffice(officeKey) || "";
-    const result = await sendReviewRequestSMS({
-      to,
-      firstName: (url.searchParams.get("testName") || "клиент").trim(),
-      reviewLink,
-    });
-
-    return NextResponse.json({
-      ok: true,
-      mode: "testSms",
-      to,
-      sid: result.sid || "",
-      reviewLink,
-    });
-  }
-
   const calendar = getCalendar();
   const sheets = getSheets();
   const now = new Date();
-  const defaultReviewDelayMinutes = readPositiveIntegerEnv(
-    "REVIEW_DELAY_MINUTES",
-    15
+  const reviewAutomationStartAt = getReviewAutomationStartAt();
+  if (!reviewAutomationStartAt) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "REVIEW_AUTOMATION_START_AT must be configured with a valid ISO date before review delivery is enabled.",
+      },
+      { status: 503 }
+    );
+  }
+  const reviewSmsConfigured = isReviewSmsConfigured();
+  const defaultReviewDelayMinutes = Math.max(
+    15,
+    readPositiveIntegerEnv("REVIEW_DELAY_MINUTES", 15)
   );
   const officeSheetConfigs = managedOffices.map((managedOffice) => ({
     managedOffice,
@@ -499,24 +441,38 @@ export async function GET(req: NextRequest) {
     tabName: string;
     rowsWritten: number;
   }> = [];
-  const reviewSentPhones = new Set<string>();
+  const allVisits: PatientVisitRecord[] = [];
+  const bookingContacts = new Map<
+    string,
+    { name: string; email: string }
+  >();
+  const reviewHistory: ReviewHistory = {
+    legacyBlockedPhones: new Set<string>(),
+    clickedPhones: new Set<string>(),
+    sentMilestones: new Set<string>(),
+    sentEventIds: new Set<string>(),
+  };
 
   for (const { managedOffice, sheetConfig } of officeSheetConfigs) {
     if (!sheetConfig.spreadsheetId) continue;
 
-    await ensureReviewSmsSheet(
-      sheets,
-      sheetConfig.spreadsheetId,
-      sheetConfig.reviewDirectoryTabName
-    );
+    if (!dryRun) {
+      await ensureReviewSmsSheet(
+        sheets,
+        sheetConfig.spreadsheetId,
+        sheetConfig.reviewDirectoryTabName
+      );
+    }
     const syncRes = await syncDirectorySheetFromCalendar({
       calendar,
       managedOffice,
       sheets,
       spreadsheetId: sheetConfig.spreadsheetId,
       tabName: sheetConfig.reviewDirectoryTabName,
+      writeSheet: !dryRun,
     });
     directoryRowsWritten += syncRes.rowsWritten;
+    allVisits.push(...syncRes.visits);
     directorySheets.push({
       officeKey: managedOffice.officeKey,
       spreadsheetId: sheetConfig.spreadsheetId,
@@ -524,37 +480,74 @@ export async function GET(req: NextRequest) {
       rowsWritten: syncRes.rowsWritten,
     });
 
-    await ensureReviewSentLogSheet(
-      sheets,
-      sheetConfig.spreadsheetId,
-      sheetConfig.reviewSentLogTabName
-    );
-    const existingPhones = await readReviewSentPhonesFromSheet({
+    const officeHistory = await readReviewHistory({
       sheets,
       spreadsheetId: sheetConfig.spreadsheetId,
       tabName: sheetConfig.reviewSentLogTabName,
+      ensureSheet: !dryRun,
     });
-    for (const phone of existingPhones) reviewSentPhones.add(phone);
+    for (const phone of officeHistory.legacyBlockedPhones) {
+      reviewHistory.legacyBlockedPhones.add(phone);
+    }
+    for (const phone of officeHistory.clickedPhones) {
+      reviewHistory.clickedPhones.add(phone);
+    }
+    for (const milestone of officeHistory.sentMilestones) {
+      reviewHistory.sentMilestones.add(milestone);
+    }
+    for (const eventId of officeHistory.sentEventIds) {
+      reviewHistory.sentEventIds.add(eventId);
+    }
+
+    const officeBookingContacts = await readBookingContactsFromSheet({
+      sheets,
+      spreadsheetId: sheetConfig.spreadsheetId,
+      tabName: sheetConfig.bookingTabName,
+    });
+    for (const [phone, contact] of officeBookingContacts) {
+      bookingContacts.set(phone, contact);
+    }
+  }
+
+  const patientVisitIndex = buildPatientVisitIndex(allVisits);
+  for (const phone of patientVisitIndex.clickedPhones) {
+    reviewHistory.clickedPhones.add(phone);
+  }
+  for (const milestone of patientVisitIndex.sentMilestones) {
+    reviewHistory.sentMilestones.add(milestone);
+  }
+  for (const [phone, contact] of bookingContacts) {
+    const existing = patientVisitIndex.contactByPhone.get(phone);
+    patientVisitIndex.contactByPhone.set(phone, {
+      name:
+        existing?.name && existing.name !== "Неизвестен"
+          ? existing.name
+          : contact.name,
+      email: existing?.email || contact.email,
+    });
   }
 
   const timeMin = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000).toISOString();
   const timeMax = now.toISOString();
 
   let processed = 0;
-  let eligibleSms = 0;
   let eligibleEmail = 0;
-  let smsSent = 0;
   let emailSent = 0;
-  let failedSms = 0;
   let failedEmail = 0;
+  let eligibleSms = 0;
+  let smsSent = 0;
+  let failedSms = 0;
   let skippedMissingData = 0;
+  let skippedBeforeAutomationStart = 0;
   let skippedNotDue = 0;
   let skippedAlreadySent = 0;
-  let skippedSmsMissingPhone = 0;
+  let skippedMissingPhone = 0;
   let skippedReviewEmailMissing = 0;
-  const skippedSmsNotConfigured = 0;
+  let skippedReviewSmsUnavailable = 0;
   let skippedNotCompleted = 0;
-  let skippedAlreadyInReviewLog = 0;
+  let skippedNotMilestone = 0;
+  let skippedLegacyReviewList = 0;
+  let skippedMilestoneAlreadySent = 0;
   let metadataUpdated = 0;
 
   for (const managedOffice of managedOffices) {
@@ -595,8 +588,13 @@ export async function GET(req: NextRequest) {
         const normalizedStartIso = start.toISOString();
         const normalizedEndIso = end.toISOString();
 
+        if (end < reviewAutomationStartAt) {
+          skippedBeforeAutomationStart++;
+          continue;
+        }
+
         const originalPrivateProps = getPrivateProps(ev);
-        const privatePatch: ReviewPrivateProps = { ...originalPrivateProps };
+        const privatePatch: CalendarReviewPrivateProps = { ...originalPrivateProps };
         let shouldPatch = false;
 
         const status = deriveAppointmentStatus({
@@ -645,11 +643,6 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        if (privatePatch.review_sms_consent !== "1") {
-          skippedMissingData++;
-          continue;
-        }
-
         const { dueAt: reviewDueAt, delayMinutes } = getReviewDueAt(
           privatePatch,
           end,
@@ -662,35 +655,9 @@ export async function GET(req: NextRequest) {
 
         if (
           privatePatch.reviewSmsSent === "1" ||
-          privatePatch.reviewEmailSent === "1" ||
-          privatePatch.review_requested_at
+          privatePatch.reviewEmailSent === "1"
         ) {
           skippedAlreadySent++;
-          const existingPhone = extractPhoneFromEvent(privatePatch, ev.summary, ev.description);
-          const reviewSheetConfig = officeSheetConfigMap.get(managedOffice.officeKey);
-          if (existingPhone && !reviewSentPhones.has(existingPhone)) {
-            reviewSentPhones.add(existingPhone);
-            if (!dryRun && reviewSheetConfig?.spreadsheetId) {
-              try {
-                await appendReviewSentLog({
-                  sheets,
-                  spreadsheetId: reviewSheetConfig.spreadsheetId,
-                  tabName: reviewSheetConfig.reviewSentLogTabName,
-                  sentAt:
-                    privatePatch.review_requested_at ||
-                    privatePatch.reviewSmsSentAt ||
-                    now.toISOString(),
-                  phone: existingPhone,
-                  name: extractDirectoryName(privatePatch, ev.summary),
-                  eventId: ev.id,
-                  officeKey: managedOffice.officeKey,
-                  reviewLink: getReviewLinkForOffice(managedOffice.officeKey) || "",
-                });
-              } catch {
-                // keep going; the event itself already shows this review as sent
-              }
-            }
-          }
           if (!dryRun && shouldPatch) {
             await calendar.events.patch({
               calendarId: managedOffice.calendarId,
@@ -719,31 +686,78 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        const customerPhone = extractPhoneFromEvent(privatePatch, ev.summary, ev.description);
-        const customerEmail = extractEmailFromEvent(privatePatch, ev.description);
-        if (!customerPhone && !customerEmail) {
-          skippedSmsMissingPhone++;
-          skippedReviewEmailMissing++;
+        const customerPhone = extractReviewPhone(
+          privatePatch,
+          ev.summary,
+          ev.description
+        );
+        if (!customerPhone) {
+          skippedMissingPhone++;
           continue;
         }
 
-        if (customerPhone && reviewSentPhones.has(customerPhone)) {
-          skippedAlreadyInReviewLog++;
-          privatePatch.review_sms_skip_reason = "already-in-review-log";
-          privatePatch.review_sms_skipped_at = now.toISOString();
-          privatePatch.review_requested_at =
-            privatePatch.review_requested_at || now.toISOString();
-          shouldPatch = true;
-          if (!dryRun) {
+        const eventKey = buildReviewEventKey(managedOffice.officeKey, ev.id);
+        const visitNumber =
+          patientVisitIndex.visitNumberByEvent.get(eventKey) || 1;
+        shouldPatch =
+          setPropIfChanged(
+            privatePatch,
+            "review_visit_number",
+            String(visitNumber)
+          ) || shouldPatch;
+
+        const skipReview = async (reason: string) => {
+          const reasonChanged = setPropIfChanged(
+            privatePatch,
+            "review_skip_reason",
+            reason
+          );
+          shouldPatch = reasonChanged || shouldPatch;
+          if (reasonChanged || !privatePatch.review_skipped_at) {
+            shouldPatch =
+              setPropIfChanged(
+                privatePatch,
+                "review_skipped_at",
+                now.toISOString()
+              ) || shouldPatch;
+          }
+
+          if (!dryRun && shouldPatch) {
             await calendar.events.patch({
               calendarId: managedOffice.calendarId,
-              eventId: ev.id,
+              eventId: ev.id!,
               requestBody: {
-                extendedProperties: { private: serializePrivateProps(privatePatch) },
+                extendedProperties: {
+                  private: serializePrivateProps(privatePatch),
+                },
               },
             });
             metadataUpdated++;
           }
+        };
+
+        if (!isReviewMilestone(visitNumber)) {
+          skippedNotMilestone++;
+          await skipReview("not-visit-1-or-5");
+          continue;
+        }
+
+        if (reviewHistory.legacyBlockedPhones.has(customerPhone)) {
+          skippedLegacyReviewList++;
+          await skipReview("legacy-review-list");
+          continue;
+        }
+
+        const milestoneKey = buildReviewMilestoneKey(
+          customerPhone,
+          visitNumber
+        );
+        if (
+          reviewHistory.sentMilestones.has(milestoneKey) ||
+          reviewHistory.sentEventIds.has(ev.id)
+        ) {
+          skippedMilestoneAlreadySent++;
+          await skipReview("visit-review-already-sent");
           continue;
         }
 
@@ -753,84 +767,110 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        const useSms = false;
-        if (!customerEmail) {
-          skippedReviewEmailMissing++;
-          continue;
-        }
-
-        if (useSms) {
-          eligibleSms++;
-        } else {
+        const contact = patientVisitIndex.contactByPhone.get(customerPhone);
+        const customerEmail =
+          extractReviewEmail(
+            privatePatch,
+            ev.description,
+            ev.attendees
+          ) || "";
+        const deliveryChannel = customerEmail ? "email" : "sms";
+        if (deliveryChannel === "email") {
           eligibleEmail++;
+        } else {
+          skippedReviewEmailMissing++;
+          if (!reviewSmsConfigured) {
+            skippedReviewSmsUnavailable++;
+            await skipReview("missing-email-review-sms-disabled");
+            continue;
+          }
+          eligibleSms++;
         }
         if (dryRun) continue;
 
         try {
           const sentAt = new Date().toISOString();
           const reviewSheetConfig = officeSheetConfigMap.get(managedOffice.officeKey);
-          const contactName = extractDirectoryName(privatePatch, ev.summary);
-
-          if (useSms) {
-            const result = await sendReviewRequestSMS({
-              to: customerPhone!,
-              firstName: (privatePatch.customerFirstName || "client").trim(),
-              reviewLink,
-            });
-            smsSent++;
-            privatePatch.reviewSmsSent = "1";
-            privatePatch.reviewSmsSentAt = sentAt;
-            privatePatch.review_requested_at = sentAt;
-            privatePatch.reviewSmsSid = result.sid || "";
-            privatePatch.reviewSmsError = "";
-            shouldPatch = true;
-            reviewSentPhones.add(customerPhone!);
-
-            if (reviewSheetConfig?.spreadsheetId) {
-              try {
-                await appendReviewSentLog({
-                  sheets,
-                  spreadsheetId: reviewSheetConfig.spreadsheetId,
-                  tabName: reviewSheetConfig.reviewSentLogTabName,
-                  sentAt,
-                  phone: customerPhone!,
-                  name: contactName,
-                  eventId: ev.id,
-                  officeKey: managedOffice.officeKey,
-                  reviewLink,
-                });
-                privatePatch.reviewSmsLogError = "";
-              } catch (logError: unknown) {
-                privatePatch.reviewSmsLogError =
-                  (logError instanceof Error ? logError.message : String(logError)).slice(0, 250);
-              }
-            }
-          } else {
+          const contactName =
+            extractReviewName(privatePatch, ev.summary) ||
+            contact?.name ||
+            "client";
+          const trackingToken = createReviewTrackingToken({
+            officeKey: managedOffice.officeKey,
+            eventId: ev.id,
+            visitNumber,
+          });
+          const trackingUrl =
+            `${getBookingUrl().replace(/\/+$/, "")}/r/${trackingToken}`;
+          if (deliveryChannel === "email") {
             const result = await sendReviewRequestEmailSMTP({
               to: customerEmail,
-              firstName: (privatePatch.customerFirstName || contactName || "client").trim(),
+              firstName: (privatePatch.customerFirstName || contactName).trim(),
               lastName: (privatePatch.customerLastName || "").trim(),
-              mapReviewUrl: reviewLink,
+              mapReviewUrl: trackingUrl,
             });
             emailSent++;
             privatePatch.reviewEmailSent = "1";
             privatePatch.reviewEmailSentAt = sentAt;
-            privatePatch.review_requested_at = sentAt;
             privatePatch.reviewEmailMessageId = result.messageId || "";
             privatePatch.reviewEmailError = "";
-            shouldPatch = true;
+            privatePatch.review_tracking_url = trackingUrl;
+          } else {
+            const result = await sendReviewRequestSMS({
+              to: customerPhone,
+              reviewLink: trackingUrl,
+            });
+            smsSent++;
+            privatePatch.reviewSmsSent = "1";
+            privatePatch.reviewSmsSentAt = sentAt;
+            privatePatch.reviewSmsSid = result.sid || "";
+            privatePatch.reviewSmsError = "";
+            privatePatch.review_tracking_url = trackingUrl;
+          }
+          privatePatch.review_requested_at = sentAt;
+          privatePatch.review_delivery_channel = deliveryChannel;
+          privatePatch.review_skip_reason = "";
+          privatePatch.review_skipped_at = "";
+          shouldPatch = true;
+          reviewHistory.sentMilestones.add(milestoneKey);
+          reviewHistory.sentEventIds.add(ev.id);
+
+          if (reviewSheetConfig?.spreadsheetId) {
+            try {
+              await appendReviewRequestLog({
+                sheets,
+                spreadsheetId: reviewSheetConfig.spreadsheetId,
+                tabName: reviewSheetConfig.reviewSentLogTabName,
+                sentAt,
+                phone: customerPhone,
+                name: contactName,
+                eventId: ev.id,
+                officeKey: managedOffice.officeKey,
+                reviewLink,
+                visitNumber,
+                channel: deliveryChannel,
+              });
+              privatePatch.reviewEmailLogError = "";
+            } catch (logError: unknown) {
+              privatePatch.reviewEmailLogError =
+                (logError instanceof Error
+                  ? logError.message
+                  : String(logError)
+                ).slice(0, 250);
+            }
           }
         } catch (error: unknown) {
-          if (useSms) {
-            failedSms++;
-            privatePatch.reviewSmsLastAttemptAt = new Date().toISOString();
-            privatePatch.reviewSmsError =
-              (error instanceof Error ? error.message : String(error)).slice(0, 250);
-          } else {
+          const errorMessage = (
+            error instanceof Error ? error.message : String(error)
+          ).slice(0, 250);
+          if (deliveryChannel === "email") {
             failedEmail++;
             privatePatch.reviewEmailLastAttemptAt = new Date().toISOString();
-            privatePatch.reviewEmailError =
-              (error instanceof Error ? error.message : String(error)).slice(0, 250);
+            privatePatch.reviewEmailError = errorMessage;
+          } else {
+            failedSms++;
+            privatePatch.reviewSmsLastAttemptAt = new Date().toISOString();
+            privatePatch.reviewSmsError = errorMessage;
           }
           shouldPatch = true;
         }
@@ -855,25 +895,30 @@ export async function GET(req: NextRequest) {
     ok: true,
     dryRun,
     processed,
-    eligibleSms,
     eligibleEmail,
-    smsSent,
     emailSent,
-    failedSms,
     failedEmail,
+    eligibleSms,
+    smsSent,
+    failedSms,
     skippedMissingData,
+    skippedBeforeAutomationStart,
     skippedNotDue,
     skippedAlreadySent,
-    skippedSmsMissingPhone,
+    skippedMissingPhone,
     skippedReviewEmailMissing,
-    skippedSmsNotConfigured,
+    skippedReviewSmsUnavailable,
     skippedNotCompleted,
-    skippedAlreadyInReviewLog,
+    skippedNotMilestone,
+    skippedLegacyReviewList,
+    skippedMilestoneAlreadySent,
     metadataUpdated,
     directoryRowsWritten,
     directorySheets,
-    smsConfigured: smsReady,
+    visitRecords: allVisits.length,
     reviewDelayMinutes: defaultReviewDelayMinutes,
+    reviewSmsConfigured,
+    reviewAutomationStartAt: reviewAutomationStartAt.toISOString(),
     calendars: managedOffices.map((entry) => ({
       officeKey: entry.officeKey,
       calendarId: entry.calendarId,

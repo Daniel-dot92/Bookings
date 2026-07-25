@@ -4,16 +4,10 @@ import { getCalendar } from "@/app/lib/google";
 import { getManagedOffices } from "@/app/lib/booking-config.server";
 import { THERAPIST_DEFINITIONS, type TherapistKey } from "@/app/lib/booking-config";
 import {
-  buildReminderScheduledId,
   deriveAppointmentStatus,
-  getReminderDueAtForAppointment,
   isValidBookingEmail,
-  shouldSuppressReminderForRecentBooking,
 } from "@/app/lib/appointment-communications";
-import {
-  sendAppointmentReminderEmailSMTP,
-  sendBookingEmailSMTP,
-} from "@/app/lib/email";
+import { sendBookingEmailSMTP } from "@/app/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -121,8 +115,7 @@ export async function GET(req: NextRequest) {
     scanned: 0,
     eligibleEmail: 0,
     confirmationEmailSent: 0,
-    reminderEmailSent: 0,
-    reminderSuppressed: 0,
+    remindersEnabled: false,
     missingEmail: 0,
     failedEmail: 0,
   };
@@ -163,7 +156,6 @@ export async function GET(req: NextRequest) {
       const patient = extractPatientName(event, priv);
       const therapist = (priv.therapistName || "екипа на DM Physio").trim();
       const contactPhone = getContactPhone(priv, managed.office.contactPhone);
-      const locationName = (priv.officeName || managed.office.copy.bg.name).trim();
       const locationUrl = (priv.officeMapsUrl || managed.office.mapsUrl).trim();
       const createdAt = getEventDate(priv.booking_created_at || event.created);
       const updates: PrivateProps = { ...priv, sms_consent: "0" };
@@ -208,51 +200,6 @@ export async function GET(req: NextRequest) {
           updates.confirmation_email_error = String(error).slice(0, 250);
           result.failedEmail += 1;
           changed = true;
-        }
-      }
-
-      const reminder = getReminderDueAtForAppointment(start);
-      const scheduledId = buildReminderScheduledId(eventId, reminder.smsKind, start);
-      const alreadySentForSchedule =
-        updates.reminderEmailSent === "1" &&
-        updates.reminder_email_scheduled_id === scheduledId;
-
-      if (!alreadySentForSchedule && now >= reminder.dueAt) {
-        if (createdAt && shouldSuppressReminderForRecentBooking(start, createdAt)) {
-          updates.reminder_email_suppressed = "1";
-          updates.reminder_email_suppressed_reason = "booked-same-or-previous-day";
-          updates.reminder_email_scheduled_id = scheduledId;
-          updates.reminder_sms_suppressed = "1";
-          updates.reminder_sms_suppressed_reason = "sms-disabled";
-          result.reminderSuppressed += 1;
-          changed = true;
-        } else {
-          try {
-            const reminderResult = await sendAppointmentReminderEmailSMTP({
-              to: email,
-              firstName: patient.firstName,
-              date: start,
-              therapist,
-              location: locationName,
-              locationUrl,
-              contactPhone,
-              kind: reminder.smsKind,
-            });
-            updates.reminderEmailSent = "1";
-            updates.reminderEmailSentAt = now.toISOString();
-            updates.reminderEmailMessageId = reminderResult.messageId || "";
-            updates.reminder_email_scheduled_id = scheduledId;
-            updates.reminder_email_suppressed = "0";
-            updates.reminder_email_suppressed_reason = "";
-            updates.reminderSmsSent = "0";
-            result.reminderEmailSent += 1;
-            changed = true;
-          } catch (error) {
-            updates.reminderEmailError = String(error).slice(0, 250);
-            updates.reminderEmailLastAttemptAt = now.toISOString();
-            result.failedEmail += 1;
-            changed = true;
-          }
         }
       }
 
