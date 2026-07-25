@@ -1,3 +1,5 @@
+import type { OfficeKey } from "@/app/lib/booking-config";
+
 const DEFAULT_SITE_URL = "https://www.dmphysi0.com";
 const DEFAULT_BOOKING_PATH = "/book";
 
@@ -20,4 +22,9 @@ export function getBookingUrl(): string {
   const fallback = `${getSiteUrl()}${DEFAULT_BOOKING_PATH}`;
   if (explicitBookingUrl) return normalizeAbsoluteUrl(explicitBookingUrl, fallback);
   return fallback;
+}
+
+export function getShortReviewUrl(officeKey: OfficeKey): string {
+  const slug = officeKey === "studentski-grad" ? "s" : "m";
+  return `https://dmphysi0.com/book/${slug}`;
 }

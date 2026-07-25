@@ -104,9 +104,14 @@ async function sendTwilioSms(
 }
 
 export async function sendReviewRequestSMS(p: ReviewSmsProps) {
+  const normalizedTo = normalizePhone(p.to);
+  if (!normalizedTo) {
+    throw new Error("Invalid review SMS recipient phone number.");
+  }
+
   const message =
     `DM Physio: \u0429\u0435 \u0441\u043c\u0435 \u0431\u043b\u0430\u0433\u043e\u0434\u0430\u0440\u043d\u0438 ` +
-    `\u0437\u0430 \u043a\u0440\u0430\u0442\u043a\u043e Google \u0440\u0435\u0432\u044e: ${p.reviewLink}`;
+    `\u0437\u0430 \u0440\u0435\u0432\u044e: ${p.reviewLink}`;
 
-  return sendTwilioSms(p.to, message);
+  return sendTwilioSms(normalizedTo, message);
 }

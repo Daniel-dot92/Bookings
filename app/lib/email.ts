@@ -1,5 +1,6 @@
 ﻿// /app/lib/email.ts
 import * as nodemailer from "nodemailer";
+import { getBookingUrl } from "@/app/lib/site";
 
 // ===============================
 // РўРёРїРѕРІРµ Р·Р° РёРјРµР№Р»Р° Рё .ics С„Р°Р№Р»Р°
@@ -44,6 +45,21 @@ function getDefaultBusinessPhone() {
   return (process.env.DM_PHYSIO_CONTACT_PHONE || "").trim() || "0883688414";
 }
 
+function toUtcGoogleDateTime(iso: string) {
+  const date = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return (
+    date.getUTCFullYear().toString() +
+    pad(date.getUTCMonth() + 1) +
+    pad(date.getUTCDate()) +
+    "T" +
+    pad(date.getUTCHours()) +
+    pad(date.getUTCMinutes()) +
+    pad(date.getUTCSeconds()) +
+    "Z"
+  );
+}
+
 /** HTML шаблон на имейла */
 function buildEmailHTML(p: BookingEmailProps) {
   const address = p.address ?? getDefaultBusinessAddress();
@@ -60,6 +76,34 @@ function buildEmailHTML(p: BookingEmailProps) {
   const extraHtml = p.extraHtml
     ? `<div style="margin-top:12px">${p.extraHtml}</div>`
     : "";
+  const calendarTitle = `DM PHYSIO - ${p.procedure}`;
+  const calendarDetails = [
+    p.therapist ? `Терапевт: ${p.therapist}` : null,
+    `Процедура: ${p.procedure}`,
+    `Дата: ${p.dateText}`,
+    `Час: ${p.timeText}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const googleCalendarUrl =
+    "https://calendar.google.com/calendar/render?" +
+    new URLSearchParams({
+      action: "TEMPLATE",
+      text: calendarTitle,
+      dates: `${toUtcGoogleDateTime(p.startISO)}/${toUtcGoogleDateTime(p.endISO)}`,
+      details: calendarDetails,
+      location: address,
+      ctz: p.tzid || "Europe/Sofia",
+    }).toString();
+  const iosCalendarUrl =
+    `${getBookingUrl()}/calendar/ics?` +
+    new URLSearchParams({
+      title: calendarTitle,
+      start: p.startISO,
+      end: p.endISO,
+      location: address,
+      details: calendarDetails,
+    }).toString();
 
   return `<!doctype html>
 <html>
@@ -79,6 +123,17 @@ function buildEmailHTML(p: BookingEmailProps) {
         <p style="margin:0"><strong>Адрес:</strong> ${esc(address)}</p>
         ${notesLine}
         ${extraHtml}
+      </div>
+
+      <div style="margin:16px 0;">
+        <a href="${esc(googleCalendarUrl)}" target="_blank"
+           style="display:inline-block;margin:0 8px 8px 0;padding:10px 16px;background:#16a34a;color:#fff;font-weight:700;border-radius:8px;text-decoration:none;">
+          Добави в Google Calendar
+        </a>
+        <a href="${esc(iosCalendarUrl)}" target="_blank"
+           style="display:inline-block;margin:0 0 8px 0;padding:10px 16px;background:#2563eb;color:#fff;font-weight:700;border-radius:8px;text-decoration:none;">
+          Добави в Apple/iOS Calendar
+        </a>
       </div>
 
       <p style="margin:12px 0;font-size:15px;">
@@ -269,6 +324,7 @@ export async function sendReviewRequestEmailSMTP(p: {
   to: string;
   firstName: string;
   lastName?: string;
+  location: string;
   mapReviewUrl: string;
 }) {
   const env = process.env as Record<string, string | undefined>;
@@ -308,6 +364,8 @@ export async function sendReviewRequestEmailSMTP(p: {
 
     <p style="margin:0 0 10px 0;">Вашето мнение помага на хора, които в момента се колебаят и живеят с болка, да направят първата стъпка към промяната.</p>
 
+    <p style="margin:0 0 10px 0;"><strong>Обект:</strong> ${esc(p.location)}</p>
+
     <div style="margin:18px 0">
       <a href="${esc(p.mapReviewUrl)}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600">👉 Оставете ревю в Google</a>
     </div>
@@ -315,10 +373,6 @@ export async function sendReviewRequestEmailSMTP(p: {
     <p style="margin:0 0 8px 0;">Благодарим ви, че ни се доверихте!</p>
 
     <p style="margin:0;color:#334155;">С уважение,<br><strong>DM PHYSIO</strong></p>
-    <p style="margin:12px 0 0 0;color:#334155;">
-      Даниел Митев - 0883 688 414<br>
-      Елица Колева - 0893 673 007
-    </p>
   </div>
 </body>
 </html>`;

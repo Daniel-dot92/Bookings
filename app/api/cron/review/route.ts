@@ -33,7 +33,7 @@ import {
   type ReviewHistory,
 } from "@/app/lib/review-log.server";
 import { createReviewTrackingToken } from "@/app/lib/review-tracking.server";
-import { getBookingUrl } from "@/app/lib/site";
+import { getBookingUrl, getShortReviewUrl } from "@/app/lib/site";
 import {
   isReviewSmsConfigured,
   normalizePhone,
@@ -807,6 +807,7 @@ export async function GET(req: NextRequest) {
               to: customerEmail,
               firstName: (privatePatch.customerFirstName || contactName).trim(),
               lastName: (privatePatch.customerLastName || "").trim(),
+              location: managedOffice.office.copy.bg.name,
               mapReviewUrl: trackingUrl,
             });
             emailSent++;
@@ -818,14 +819,16 @@ export async function GET(req: NextRequest) {
           } else {
             const result = await sendReviewRequestSMS({
               to: customerPhone,
-              reviewLink: trackingUrl,
+              reviewLink: getShortReviewUrl(managedOffice.officeKey),
             });
             smsSent++;
             privatePatch.reviewSmsSent = "1";
             privatePatch.reviewSmsSentAt = sentAt;
             privatePatch.reviewSmsSid = result.sid || "";
             privatePatch.reviewSmsError = "";
-            privatePatch.review_tracking_url = trackingUrl;
+            privatePatch.review_tracking_url = getShortReviewUrl(
+              managedOffice.officeKey
+            );
           }
           privatePatch.review_requested_at = sentAt;
           privatePatch.review_delivery_channel = deliveryChannel;
