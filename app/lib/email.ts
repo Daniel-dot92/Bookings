@@ -350,30 +350,44 @@ export async function sendReviewRequestEmailSMTP(p: {
 
   const html = `<!doctype html>
 <html>
-<body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;background:#fff;margin:0;padding:20px">
-  <div style="max-width:600px;margin:auto">
-    <p style="margin:0 0 14px 0;">Здравейте, ${fullName},</p>
+<head>
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light">
+</head>
+<body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a!important;background-color:#f1f5f3!important;margin:0;padding:0;-webkit-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f1f5f3" style="width:100%;background-color:#f1f5f3!important;">
+    <tr>
+      <td align="center" style="padding:24px 14px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:600px;background-color:#ffffff!important;border:1px solid #dce8e3;border-radius:18px;">
+          <tr>
+            <td style="padding:28px;color:#0f172a!important;-webkit-text-fill-color:#0f172a;">
+              <p style="margin:0 0 14px 0;color:#334155!important;-webkit-text-fill-color:#334155;">Здравейте, ${fullName},</p>
 
-    <h2 style="margin:0 0 10px 0;color:#111827;font-size:22px;line-height:1.3;">Как се чувствате след терапията?</h2>
+              <h2 style="margin:0 0 10px 0;color:#0b1f19!important;-webkit-text-fill-color:#0b1f19;font-size:22px;line-height:1.3;">Как се чувствате след терапията?</h2>
 
-    <p style="margin:0 0 10px 0;">По-леко движение? По-малко болка?</p>
+              <p style="margin:0 0 10px 0;color:#0f172a!important;-webkit-text-fill-color:#0f172a;">По-леко движение? По-малко болка?</p>
 
-    <p style="margin:0 0 10px 0;">Ако сме ви помогнали да се освободите от болката и да се върнете към нормалния си живот, ще сме ви благодарни да споделите своя опит.</p>
+              <p style="margin:0 0 10px 0;color:#0f172a!important;-webkit-text-fill-color:#0f172a;">Ако сме ви помогнали да се освободите от болката и да се върнете към нормалния си живот, ще сме ви благодарни да споделите своя опит.</p>
 
-    <p style="margin:0 0 10px 0;">За нас това означава много.</p>
+              <p style="margin:0 0 10px 0;color:#0f172a!important;-webkit-text-fill-color:#0f172a;">За нас това означава много.</p>
 
-    <p style="margin:0 0 10px 0;">Вашето мнение помага на хора, които в момента се колебаят и живеят с болка, да направят първата стъпка към промяната.</p>
+              <p style="margin:0 0 10px 0;color:#0f172a!important;-webkit-text-fill-color:#0f172a;">Вашето мнение помага на хора, които в момента се колебаят и живеят с болка, да направят първата стъпка към промяната.</p>
 
-    <p style="margin:0 0 10px 0;"><strong>Обект:</strong> ${esc(p.location)}</p>
+              <p style="margin:0 0 10px 0;color:#0f172a!important;-webkit-text-fill-color:#0f172a;"><strong>Обект:</strong> ${esc(p.location)}</p>
 
-    <div style="margin:18px 0">
-      <a href="${esc(p.mapReviewUrl)}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:12px 16px;border-radius:10px;font-weight:600">👉 Оставете ревю в Google</a>
-    </div>
+              <div style="margin:20px 0">
+                <a href="${esc(p.mapReviewUrl)}" style="display:inline-block;background-color:#08785f!important;color:#ffffff!important;-webkit-text-fill-color:#ffffff;text-decoration:none;padding:13px 18px;border-radius:10px;font-weight:700">Оставете ревю в Google</a>
+              </div>
 
-    <p style="margin:0 0 8px 0;">Благодарим ви, че ни се доверихте!</p>
+              <p style="margin:0 0 8px 0;color:#0f172a!important;-webkit-text-fill-color:#0f172a;">Благодарим ви, че ни се доверихте!</p>
 
-    <p style="margin:0;color:#334155;">С уважение,<br><strong>DM PHYSIO</strong></p>
-  </div>
+              <p style="margin:0;color:#334155!important;-webkit-text-fill-color:#334155;">С уважение,<br><strong>DM PHYSIO</strong></p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`;
 

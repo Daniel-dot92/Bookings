@@ -76,7 +76,7 @@ export const OFFICE_DEFINITIONS: Record<OfficeKey, OfficeDefinition> = {
     reviewsUrl:
       "https://www.google.com/maps/search/?api=1&query=DM+Physio+Prof.+Hristo+Danov+19+Sofia",
     googleRating: 5,
-    googleReviewCount: 65,
+    googleReviewCount: 66,
     photo: "/baner studentski.webp",
     contactPhone: "0883688414",
     theme: {
@@ -107,6 +107,8 @@ export const OFFICE_DEFINITIONS: Record<OfficeKey, OfficeDefinition> = {
     },
     mapsUrl: "https://maps.app.goo.gl/xYi2heoA2kY44wLq5",
     reviewsUrl: "https://g.page/r/CVRkl_pUfEceEAE/review",
+    googleRating: 5,
+    googleReviewCount: 1,
     photo: "/baner mladost.webp",
     contactPhone: "0898485320",
     theme: {

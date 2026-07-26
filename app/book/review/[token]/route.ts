@@ -86,5 +86,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     console.error("[REVIEW_CLICK] Tracking failed:", error);
   }
 
-  return NextResponse.redirect(reviewLink, 302);
+  const landingPath =
+    payload.officeKey === "studentski-grad" ? "/book/s" : "/book/m";
+
+  return NextResponse.redirect(
+    new URL(landingPath, request.nextUrl.origin),
+    302
+  );
 }
