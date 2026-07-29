@@ -12,6 +12,7 @@ import {
   getOfficeTherapists,
   getTherapistDefinition,
   getTherapistSelectionOptions,
+  isTherapistUnavailable,
 } from "@/app/lib/booking-config";
 import { fmtDateHeader } from "@/app/lib/ui";
 
@@ -341,10 +342,15 @@ export default function BookingAppClient({
     }
 
     const options = getTherapistSelectionOptions(officeKey);
+    const availableOptions = options.filter(
+      (key) =>
+        key === "any" ||
+        !isTherapistUnavailable(officeKey, key)
+    );
     setFirstFreeByTherapist(getEmptyFirstFreeMap(options));
     setTherapist((current) => {
-      if (current && options.includes(current)) return current;
-      return options[0] || null;
+      if (current && availableOptions.includes(current)) return current;
+      return availableOptions[0] || null;
     });
   }, [officeKey]);
 
@@ -382,6 +388,13 @@ export default function BookingAppClient({
 
   const selectTherapistAndShowTimes = React.useCallback(
     (key: TherapistSelectionKey) => {
+      if (
+        key !== "any" &&
+        officeKey &&
+        isTherapistUnavailable(officeKey, key)
+      ) {
+        return;
+      }
       setTherapist(key);
 
       // The section already exists, so this also works when the active therapist is tapped again.
@@ -390,7 +403,7 @@ export default function BookingAppClient({
         window.setTimeout(scrollToTimeSection, 180);
       });
     },
-    [scrollToTimeSection]
+    [officeKey, scrollToTimeSection]
   );
 
   const load = React.useCallback(async () => {
@@ -446,6 +459,13 @@ export default function BookingAppClient({
     try {
       const responses = await Promise.all(
         options.map(async (key) => {
+          if (
+            key !== "any" &&
+            isTherapistUnavailable(officeKey, key)
+          ) {
+            return [key, null] as const;
+          }
+
           const params = new URLSearchParams({
             date: d,
             duration: String(duration),
@@ -1004,6 +1024,10 @@ export default function BookingAppClient({
                     >
                       {therapistOptions.map((key) => {
                         const active = therapist === key;
+                        const unavailable =
+                          key !== "any" &&
+                          officeKey !== null &&
+                          isTherapistUnavailable(officeKey, key);
                         const firstFree = firstFreeByTherapist[key] ?? null;
                         const item =
                           key === "any"
@@ -1022,7 +1046,11 @@ export default function BookingAppClient({
                               ? `Работно време: ${officeSchedule?.weekdays?.start || ""}-${officeSchedule?.weekdays?.end || ""}`
                               : `Working hours: ${officeSchedule?.weekdays?.start || ""}-${officeSchedule?.weekdays?.end || ""}`;
 
-                        const availabilitySummary = firstFreeLoading
+                        const availabilitySummary = unavailable
+                          ? locale === "bg"
+                            ? "Временно недостъпен"
+                            : "Temporarily unavailable"
+                          : firstFreeLoading
                           ? locale === "bg"
                             ? "Проверка..."
                             : "Checking..."
@@ -1041,7 +1069,9 @@ export default function BookingAppClient({
                             className={[
                               "relative overflow-hidden rounded-[24px] border text-left transition",
                               singleTherapist ? "mx-auto w-full max-w-xl" : "",
-                              active
+                              unavailable
+                                ? "border-slate-200 bg-slate-100 opacity-60 grayscale"
+                                : active
                                 ? "border-slate-950 bg-slate-50 shadow-sm"
                                 : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm",
                             ].join(" ")}
@@ -1057,7 +1087,13 @@ export default function BookingAppClient({
                               type="button"
                               onClick={() => selectTherapistAndShowTimes(key)}
                               aria-pressed={active}
+                              disabled={unavailable}
+                              aria-disabled={unavailable}
                               className={`block w-full text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-500 ${
+                                unavailable
+                                  ? "cursor-not-allowed"
+                                  : "cursor-pointer"
+                              } ${
                                 singleTherapist ? "p-3 sm:p-4" : "p-2.5 sm:p-3"
                               }`}
                             >
@@ -1101,7 +1137,9 @@ export default function BookingAppClient({
                                   <div className="mt-1 text-[11px] leading-5 text-slate-600 sm:text-xs">{subtitle}</div>
                                   <div
                                     className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[10px] font-medium sm:px-3 sm:text-[11px] ${
-                                      !firstFreeLoading && !firstFree
+                                      unavailable
+                                        ? "bg-slate-200 text-slate-600"
+                                        : !firstFreeLoading && !firstFree
                                         ? "bg-rose-50 text-rose-700"
                                         : "bg-slate-100 text-slate-700"
                                     }`}

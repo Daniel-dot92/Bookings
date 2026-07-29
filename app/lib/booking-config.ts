@@ -51,6 +51,7 @@ export type TherapistDefinition = {
   photo?: string;
   profileAnchor: string;
   schedule: TherapistSchedule;
+  unavailableAt?: OfficeKey[];
 };
 
 export const OFFICE_DEFINITIONS: Record<OfficeKey, OfficeDefinition> = {
@@ -128,6 +129,7 @@ export const THERAPIST_DEFINITIONS: Record<TherapistKey, TherapistDefinition> = 
     contactPhone: "0883688414",
     photo: "/daniel.webp",
     profileAnchor: "daniel-mitev",
+    unavailableAt: ["studentski-grad"],
     schedule: {
       "studentski-grad": {
         weekdays: { start: "13:00", end: "19:00" },
@@ -141,6 +143,7 @@ export const THERAPIST_DEFINITIONS: Record<TherapistKey, TherapistDefinition> = 
     contactPhone: "0893673007",
     photo: "/elitsa.jpg",
     profileAnchor: "elitsa-koleva",
+    unavailableAt: ["studentski-grad"],
     schedule: {
       "studentski-grad": {
         weekdays: { start: "08:00", end: "13:00" },
@@ -155,6 +158,10 @@ export const THERAPIST_DEFINITIONS: Record<TherapistKey, TherapistDefinition> = 
     photo: "/ivan.webp",
     profileAnchor: "ivan-mitev",
     schedule: {
+      "studentski-grad": {
+        weekdays: { start: "14:00", end: "19:00" },
+        saturday: { start: "14:00", end: "19:00" },
+      },
       "mladost-1a": {
         weekdays: { start: "08:00", end: "19:00" },
         saturday: { start: "08:00", end: "16:00" },
@@ -186,7 +193,24 @@ export function getTherapistDefinition(therapistKey: TherapistKey) {
 
 export function getOfficeTherapists(officeKey: OfficeKey) {
   return THERAPIST_ORDER.filter(
+    (therapistKey) =>
+      THERAPIST_DEFINITIONS[therapistKey].schedule[officeKey] &&
+      !isTherapistUnavailable(officeKey, therapistKey)
+  );
+}
+
+export function getVisibleOfficeTherapists(officeKey: OfficeKey) {
+  return THERAPIST_ORDER.filter(
     (therapistKey) => THERAPIST_DEFINITIONS[therapistKey].schedule[officeKey]
+  );
+}
+
+export function isTherapistUnavailable(
+  officeKey: OfficeKey,
+  therapistKey: TherapistKey
+) {
+  return Boolean(
+    THERAPIST_DEFINITIONS[therapistKey].unavailableAt?.includes(officeKey)
   );
 }
 
@@ -195,6 +219,7 @@ export function getTherapistShift(
   therapistKey: TherapistKey,
   isSaturday: boolean
 ) {
+  if (isTherapistUnavailable(officeKey, therapistKey)) return null;
   const officeSchedule = THERAPIST_DEFINITIONS[therapistKey].schedule[officeKey];
   if (!officeSchedule) return null;
   return isSaturday
@@ -203,7 +228,8 @@ export function getTherapistShift(
 }
 
 export function getTherapistSelectionOptions(officeKey: OfficeKey) {
-  const therapists = getOfficeTherapists(officeKey);
-  if (therapists.length <= 1) return therapists;
-  return ["any", ...therapists] as TherapistSelectionKey[];
+  const visibleTherapists = getVisibleOfficeTherapists(officeKey);
+  const availableTherapists = getOfficeTherapists(officeKey);
+  if (availableTherapists.length <= 1) return visibleTherapists;
+  return ["any", ...visibleTherapists] as TherapistSelectionKey[];
 }
