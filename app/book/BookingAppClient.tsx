@@ -286,6 +286,10 @@ export default function BookingAppClient({
   const [officeKey, setOfficeKey] = React.useState<OfficeKey | null>(initialOfficeKey);
   const [duration, setDuration] = React.useState<30 | 60 | 90>(60);
   const [slots, setSlots] = React.useState<Slot[]>([]);
+  const [unavailableDates, setUnavailableDates] = React.useState<string[]>([]);
+  const [calendarRangeStart, setCalendarRangeStart] = React.useState(() =>
+    ymd(new Date())
+  );
   const [selectedTime, setSelectedTime] = React.useState<string | null>(null);
   const [therapist, setTherapist] = React.useState<TherapistSelectionKey | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -360,6 +364,10 @@ export default function BookingAppClient({
     setNote(null);
     setDuration(value);
   };
+
+  const handleCalendarRangeChange = React.useCallback((start: string) => {
+    setCalendarRangeStart(start);
+  }, []);
 
   const scrollToBookingSection = React.useCallback(() => {
     if (typeof window === "undefined") return;
@@ -441,6 +449,16 @@ export default function BookingAppClient({
       }
 
       setSlots(list);
+      setUnavailableDates((current) => {
+        const selectedDate = ymd(date);
+        const next = new Set(current);
+        if (list.some((slot) => slot.available)) {
+          next.delete(selectedDate);
+        } else {
+          next.add(selectedDate);
+        }
+        return [...next];
+      });
     } catch (e: unknown) {
       setSlots([]);
       setError(e instanceof Error ? e.message : copy.loadingSlots);
@@ -503,6 +521,48 @@ export default function BookingAppClient({
   React.useEffect(() => {
     if (date && officeKey) void loadFirstFreeByTherapist();
   }, [date, loadFirstFreeByTherapist, officeKey]);
+
+  React.useEffect(() => {
+    if (!officeKey || !therapist) {
+      setUnavailableDates([]);
+      return;
+    }
+
+    const activeOfficeKey = officeKey;
+    const activeTherapist = therapist;
+    const controller = new AbortController();
+
+    async function loadUnavailableDates() {
+      setUnavailableDates([]);
+      const params = new URLSearchParams({
+        start: calendarRangeStart,
+        days: "28",
+        duration: String(duration),
+        location: activeOfficeKey,
+        therapist: activeTherapist,
+      });
+
+      try {
+        const res = await fetch(`/api/availability/dates?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+
+        const json = (await res.json()) as { unavailableDates?: string[] };
+        if (!controller.signal.aborted) {
+          setUnavailableDates(
+            Array.isArray(json.unavailableDates) ? json.unavailableDates : []
+          );
+        }
+      } catch {
+        // Keep the calendar neutral if the overview cannot be loaded.
+      }
+    }
+
+    void loadUnavailableDates();
+    return () => controller.abort();
+  }, [calendarRangeStart, duration, officeKey, therapist]);
 
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
@@ -1005,7 +1065,13 @@ export default function BookingAppClient({
                     {dateSectionTitle}
                   </h2>
                   <div className="mt-4">
-                    <Calendar value={date} onChange={setDate} locale={locale} />
+                    <Calendar
+                      value={date}
+                      onChange={setDate}
+                      locale={locale}
+                      unavailableDates={unavailableDates}
+                      onRangeChange={handleCalendarRangeChange}
+                    />
                   </div>
 
                   <div className="mt-6 rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] shadow-sm">
