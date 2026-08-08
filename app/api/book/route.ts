@@ -704,7 +704,7 @@ export async function POST(req: NextRequest) {
     } else try {
       console.log("[BOOK] stage: send-email");
 
-      await sendBookingEmailSMTP({
+      const confirmationEmail = await sendBookingEmailSMTP({
         to: email,
         from: process.env.EMAIL_FROM || "DM PHYSIO <dmphysio369@gmail.com>",
         subject: "Потвърждение за запазен час – DM PHYSIO",
@@ -738,13 +738,23 @@ export async function POST(req: NextRequest) {
       emailOk = true;
       privateMetadata.confirmation_email_sent = "1";
       privateMetadata.confirmation_email_sent_at = new Date().toISOString();
+      privateMetadata.confirmation_email_message_id =
+        confirmationEmail.messageId || "";
       privateMetadata.confirmation_delivery_channel = "email";
-      console.log("[BOOK] stage: email-sent");
+      console.log("[BOOK] confirmation-email", {
+        eventId,
+        status: "sent",
+        hasMessageId: Boolean(confirmationEmail.messageId),
+      });
     } catch (e: unknown) {
       emailOk = false;
       emailErr = e instanceof Error ? e.message : String(e);
       privateMetadata.confirmation_email_error = emailErr.slice(0, 250);
-      console.error("[BOOK] Email send failed:", emailErr);
+      console.error("[BOOK] confirmation-email", {
+        eventId,
+        status: "failed",
+        error: emailErr,
+      });
     }
 
     if (eventId) {

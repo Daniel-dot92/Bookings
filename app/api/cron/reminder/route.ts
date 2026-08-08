@@ -4,15 +4,26 @@ import { getCalendar } from "@/app/lib/google";
 import { getManagedOffices } from "@/app/lib/booking-config.server";
 import { THERAPIST_DEFINITIONS, type TherapistKey } from "@/app/lib/booking-config";
 import {
+  buildReminderScheduledId,
   deriveAppointmentStatus,
+  getReminderDueAtForAppointment,
   isValidBookingEmail,
+  shouldSuppressReminderForRecentBooking,
 } from "@/app/lib/appointment-communications";
-import { sendBookingEmailSMTP } from "@/app/lib/email";
+import {
+  sendAppointmentReminderEmailSMTP,
+  sendBookingEmailSMTP,
+} from "@/app/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type PrivateProps = Record<string, string>;
+
+function cleanText(value: unknown, fallback = "") {
+  if (value === null || value === undefined) return fallback;
+  return String(value).trim() || fallback;
+}
 
 function isAuthorized(req: NextRequest) {
   const expected = (process.env.CRON_SECRET || "").trim();
@@ -41,17 +52,19 @@ function extractEmail(event: calendar_v3.Schema$Event, priv: PrivateProps) {
   ];
   const descriptionMatch = (event.description || "").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   if (descriptionMatch) candidates.push(descriptionMatch[0]);
-  return candidates.map((value) => value.trim()).find(isValidBookingEmail) || "";
+  return candidates
+    .map((value) => cleanText(value))
+    .find(isValidBookingEmail) || "";
 }
 
 function extractPatientName(event: calendar_v3.Schema$Event, priv: PrivateProps) {
-  const firstName = (priv.customerFirstName || priv.firstName || "").trim();
-  const lastName = (priv.customerLastName || priv.lastName || "").trim();
+  const firstName = cleanText(priv.customerFirstName || priv.firstName);
+  const lastName = cleanText(priv.customerLastName || priv.lastName);
   if (firstName) return { firstName, lastName };
 
-  const summary = (event.summary || "").trim();
+  const summary = cleanText(event.summary);
   const reservationMatch = summary.match(/(?:Резервация|Reservation):\s*([^–-]+)/i);
-  const rawName = (reservationMatch?.[1] || summary).trim();
+  const rawName = cleanText(reservationMatch?.[1] || summary);
   const parts = rawName.split(/\s+/).filter(Boolean);
   return {
     firstName: parts[0] || "Клиент",
@@ -115,7 +128,9 @@ export async function GET(req: NextRequest) {
     scanned: 0,
     eligibleEmail: 0,
     confirmationEmailSent: 0,
-    remindersEnabled: false,
+    reminderEmailSent: 0,
+    reminderSuppressed: 0,
+    remindersEnabled: true,
     missingEmail: 0,
     failedEmail: 0,
   };
@@ -154,9 +169,19 @@ export async function GET(req: NextRequest) {
       result.eligibleEmail += 1;
 
       const patient = extractPatientName(event, priv);
-      const therapist = (priv.therapistName || "екипа на DM Physio").trim();
-      const contactPhone = getContactPhone(priv, managed.office.contactPhone);
-      const locationUrl = (priv.officeMapsUrl || managed.office.mapsUrl).trim();
+      const therapist = cleanText(priv.therapistName, "екипа на DM Physio");
+      const contactPhone = cleanText(
+        getContactPhone(priv, managed.office.contactPhone),
+        managed.office.contactPhone
+      );
+      const locationName = cleanText(
+        priv.officeName,
+        managed.office.copy.bg.name
+      );
+      const locationUrl = cleanText(
+        priv.officeMapsUrl,
+        managed.office.mapsUrl
+      );
       const createdAt = getEventDate(priv.booking_created_at || event.created);
       const updates: PrivateProps = { ...priv, sms_consent: "0" };
       let changed = false;
@@ -179,10 +204,13 @@ export async function GET(req: NextRequest) {
             dateText: formatConfirmationDate(start),
             timeText: formatConfirmationTime(start, end),
             therapist,
-            procedure: (priv.procedureName || "Терапия").trim(),
-            phone: (priv.customerPhone || priv.patient_phone || "-").trim(),
+            procedure: cleanText(priv.procedureName, "Терапия"),
+            phone: cleanText(priv.customerPhone || priv.patient_phone, "-"),
             businessPhone: contactPhone,
-            address: (priv.officeAddress || managed.office.copy.bg.address).trim(),
+            address: cleanText(
+              priv.officeAddress,
+              managed.office.copy.bg.address
+            ),
             eventUid: eventId,
             startISO: start.toISOString(),
             endISO: end.toISOString(),
@@ -200,6 +228,57 @@ export async function GET(req: NextRequest) {
           updates.confirmation_email_error = String(error).slice(0, 250);
           result.failedEmail += 1;
           changed = true;
+        }
+      }
+
+      const reminder = getReminderDueAtForAppointment(start);
+      const scheduledId = buildReminderScheduledId(
+        eventId,
+        reminder.smsKind,
+        start
+      );
+      const alreadySentForSchedule =
+        updates.reminderEmailSent === "1" &&
+        updates.reminder_email_scheduled_id === scheduledId;
+
+      if (!alreadySentForSchedule && now >= reminder.dueAt) {
+        if (createdAt && shouldSuppressReminderForRecentBooking(start, createdAt)) {
+          updates.reminder_email_suppressed = "1";
+          updates.reminder_email_suppressed_reason =
+            "booked-same-or-previous-day";
+          updates.reminder_email_scheduled_id = scheduledId;
+          updates.reminder_sms_suppressed = "1";
+          updates.reminder_sms_suppressed_reason = "sms-disabled";
+          result.reminderSuppressed += 1;
+          changed = true;
+        } else {
+          try {
+            const reminderResult = await sendAppointmentReminderEmailSMTP({
+              to: email,
+              firstName: patient.firstName,
+              date: start,
+              therapist,
+              location: locationName,
+              locationUrl,
+              contactPhone,
+              kind: reminder.smsKind,
+            });
+            updates.reminderEmailSent = "1";
+            updates.reminderEmailSentAt = now.toISOString();
+            updates.reminderEmailMessageId = reminderResult.messageId || "";
+            updates.reminder_email_scheduled_id = scheduledId;
+            updates.reminder_email_suppressed = "0";
+            updates.reminder_email_suppressed_reason = "";
+            updates.reminderEmailError = "";
+            updates.reminderSmsSent = "0";
+            result.reminderEmailSent += 1;
+            changed = true;
+          } catch (error) {
+            updates.reminderEmailError = String(error).slice(0, 250);
+            updates.reminderEmailLastAttemptAt = now.toISOString();
+            result.failedEmail += 1;
+            changed = true;
+          }
         }
       }
 
