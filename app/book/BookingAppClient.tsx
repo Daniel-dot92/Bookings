@@ -536,13 +536,12 @@ export default function BookingAppClient({
   }, [date, loadFirstFreeByTherapist, officeKey]);
 
   React.useEffect(() => {
-    if (!officeKey || !therapist) {
+    if (!officeKey) {
       setUnavailableDates([]);
       return;
     }
 
     const activeOfficeKey = officeKey;
-    const activeTherapist = therapist;
     const controller = new AbortController();
 
     async function loadUnavailableDates() {
@@ -552,7 +551,7 @@ export default function BookingAppClient({
         days: "28",
         duration: String(duration),
         location: activeOfficeKey,
-        therapist: activeTherapist,
+        therapist: "any",
       });
 
       try {
@@ -575,7 +574,7 @@ export default function BookingAppClient({
 
     void loadUnavailableDates();
     return () => controller.abort();
-  }, [calendarRangeStart, duration, officeKey, therapist]);
+  }, [calendarRangeStart, duration, officeKey]);
 
   React.useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
