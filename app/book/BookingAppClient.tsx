@@ -13,6 +13,7 @@ import {
   getTherapistDefinition,
   getTherapistSelectionOptions,
   isTherapistUnavailable,
+  isTherapistSelectionDisabled,
 } from "@/app/lib/booking-config";
 import { fmtDateHeader } from "@/app/lib/ui";
 
@@ -334,7 +335,10 @@ export default function BookingAppClient({
   }, [initialOfficeKey]);
 
   const selectedOffice = officeKey ? getOfficeDefinition(officeKey) : null;
-  const therapistOptions = officeKey ? getTherapistSelectionOptions(officeKey) : [];
+  const selectedDateKey = date ? ymd(date) : null;
+  const therapistOptions = officeKey
+    ? getTherapistSelectionOptions(officeKey, selectedDateKey)
+    : [];
   const selectedTherapist =
     therapist && therapist !== "any" ? getTherapistDefinition(therapist) : null;
 
@@ -345,18 +349,27 @@ export default function BookingAppClient({
       return;
     }
 
-    const options = getTherapistSelectionOptions(officeKey);
-    const availableOptions = options.filter(
+    const options = getTherapistSelectionOptions(officeKey, selectedDateKey);
+    const selectableOptions = options.filter(
       (key) =>
         key === "any" ||
-        !isTherapistUnavailable(officeKey, key)
+        !isTherapistSelectionDisabled(officeKey, key, selectedDateKey)
     );
+    const preferredTherapist = getOfficeTherapists(
+      officeKey,
+      selectedDateKey
+    ).find((key) => options.includes(key));
     setFirstFreeByTherapist(getEmptyFirstFreeMap(options));
     setTherapist((current) => {
-      if (current && availableOptions.includes(current)) return current;
-      return availableOptions[0] || null;
+      if (current && selectableOptions.includes(current)) return current;
+      return (
+        preferredTherapist ||
+        selectableOptions.find((key) => key !== "any") ||
+        selectableOptions[0] ||
+        null
+      );
     });
-  }, [officeKey]);
+  }, [officeKey, selectedDateKey]);
 
   const setDurationSafe = (value: 30 | 60 | 90) => {
     setSelectedTime(null);
@@ -399,7 +412,7 @@ export default function BookingAppClient({
       if (
         key !== "any" &&
         officeKey &&
-        isTherapistUnavailable(officeKey, key)
+        isTherapistSelectionDisabled(officeKey, key, selectedDateKey)
       ) {
         return;
       }
@@ -411,7 +424,7 @@ export default function BookingAppClient({
         window.setTimeout(scrollToTimeSection, 180);
       });
     },
-    [officeKey, scrollToTimeSection]
+    [officeKey, scrollToTimeSection, selectedDateKey]
   );
 
   const load = React.useCallback(async () => {
@@ -470,7 +483,7 @@ export default function BookingAppClient({
   const loadFirstFreeByTherapist = React.useCallback(async () => {
     if (!date || !officeKey) return;
 
-    const options = getTherapistSelectionOptions(officeKey);
+    const options = getTherapistSelectionOptions(officeKey, selectedDateKey);
     const d = ymd(date);
     setFirstFreeLoading(true);
 
@@ -479,7 +492,7 @@ export default function BookingAppClient({
         options.map(async (key) => {
           if (
             key !== "any" &&
-            isTherapistUnavailable(officeKey, key)
+            isTherapistSelectionDisabled(officeKey, key, selectedDateKey)
           ) {
             return [key, null] as const;
           }
@@ -512,7 +525,7 @@ export default function BookingAppClient({
     } finally {
       setFirstFreeLoading(false);
     }
-  }, [date, duration, officeKey]);
+  }, [date, duration, officeKey, selectedDateKey]);
 
   React.useEffect(() => {
     if (date && officeKey && therapist) void load();
@@ -1090,10 +1103,22 @@ export default function BookingAppClient({
                     >
                       {therapistOptions.map((key) => {
                         const active = therapist === key;
-                        const unavailable =
+                        const unavailableForDate =
                           key !== "any" &&
                           officeKey !== null &&
-                          isTherapistUnavailable(officeKey, key);
+                          isTherapistUnavailable(
+                            officeKey,
+                            key,
+                            selectedDateKey
+                          );
+                        const selectionDisabled =
+                          key !== "any" &&
+                          officeKey !== null &&
+                          isTherapistSelectionDisabled(
+                            officeKey,
+                            key,
+                            selectedDateKey
+                          );
                         const firstFree = firstFreeByTherapist[key] ?? null;
                         const item =
                           key === "any"
@@ -1101,6 +1126,10 @@ export default function BookingAppClient({
                             : getTherapistDefinition(key);
                         const officeSchedule =
                           officeKey && item ? item.schedule[officeKey] : undefined;
+                        const availabilityRule =
+                          officeKey && item
+                            ? item.availability?.[officeKey]
+                            : undefined;
                         const label =
                           key === "any"
                             ? copy.anyTherapistLabel
@@ -1112,10 +1141,14 @@ export default function BookingAppClient({
                               ? `Работно време: ${officeSchedule?.weekdays?.start || ""}-${officeSchedule?.weekdays?.end || ""}`
                               : `Working hours: ${officeSchedule?.weekdays?.start || ""}-${officeSchedule?.weekdays?.end || ""}`;
 
-                        const availabilitySummary = unavailable
+                        const availabilitySummary = selectionDisabled
                           ? locale === "bg"
-                            ? "Временно недостъпен"
-                            : "Temporarily unavailable"
+                            ? "Не работи на избраната дата"
+                            : "Not working on the selected date"
+                          : unavailableForDate && availabilityRule?.bookableFrom
+                            ? locale === "bg"
+                              ? "Няма часове до 25 август"
+                              : "No appointments until 25 August"
                           : firstFreeLoading
                           ? locale === "bg"
                             ? "Проверка..."
@@ -1135,7 +1168,7 @@ export default function BookingAppClient({
                             className={[
                               "relative overflow-hidden rounded-[24px] border text-left transition",
                               singleTherapist ? "mx-auto w-full max-w-xl" : "",
-                              unavailable
+                              selectionDisabled
                                 ? "border-slate-200 bg-slate-100 opacity-60 grayscale"
                                 : active
                                 ? "border-slate-950 bg-slate-50 shadow-sm"
@@ -1153,10 +1186,10 @@ export default function BookingAppClient({
                               type="button"
                               onClick={() => selectTherapistAndShowTimes(key)}
                               aria-pressed={active}
-                              disabled={unavailable}
-                              aria-disabled={unavailable}
+                              disabled={selectionDisabled}
+                              aria-disabled={selectionDisabled}
                               className={`block w-full text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-500 ${
-                                unavailable
+                                selectionDisabled
                                   ? "cursor-not-allowed"
                                   : "cursor-pointer"
                               } ${
@@ -1203,7 +1236,7 @@ export default function BookingAppClient({
                                   <div className="mt-1 text-[11px] leading-5 text-slate-600 sm:text-xs">{subtitle}</div>
                                   <div
                                     className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[10px] font-medium sm:px-3 sm:text-[11px] ${
-                                      unavailable
+                                      selectionDisabled
                                         ? "bg-slate-200 text-slate-600"
                                         : !firstFreeLoading && !firstFree
                                         ? "bg-rose-50 text-rose-700"

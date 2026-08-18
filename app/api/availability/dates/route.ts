@@ -5,6 +5,7 @@ import {
   type ShiftWindow,
   getOfficeTherapists,
   getTherapistShift,
+  getVisibleOfficeTherapists,
   isOfficeKey,
   isTherapistSelectionKey,
 } from "@/app/lib/booking-config";
@@ -129,11 +130,11 @@ export async function GET(req: NextRequest) {
     const therapistSelection = isTherapistSelectionKey(therapist)
       ? therapist
       : "any";
-    const officeTherapists = getOfficeTherapists(location);
+    const visibleTherapists = getVisibleOfficeTherapists(location);
 
     if (
       therapistSelection !== "any" &&
-      !officeTherapists.includes(therapistSelection)
+      !visibleTherapists.includes(therapistSelection)
     ) {
       return NextResponse.json({ unavailableDates: [] }, { status: 400 });
     }
@@ -175,16 +176,20 @@ export async function GET(req: NextRequest) {
       }
 
       const isSaturday = weekday === "Sat";
+      const officeTherapists = getOfficeTherapists(location, date);
       const shiftWindows =
         therapistSelection === "any"
           ? officeTherapists
-              .map((key) => getTherapistShift(location, key, isSaturday))
+              .map((key) =>
+                getTherapistShift(location, key, isSaturday, date)
+              )
               .filter(Boolean) as ShiftWindow[]
           : [
               getTherapistShift(
                 location,
                 therapistSelection,
-                isSaturday
+                isSaturday,
+                date
               ),
             ].filter(Boolean) as ShiftWindow[];
 

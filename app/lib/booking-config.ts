@@ -26,6 +26,17 @@ type TherapistSchedule = Partial<
   >
 >;
 
+type TherapistAvailability = Partial<
+  Record<
+    OfficeKey,
+    {
+      bookableFrom?: string;
+      bookableUntil?: string;
+      visibleUntil?: string;
+    }
+  >
+>;
+
 export type OfficeDefinition = {
   key: OfficeKey;
   copy: Record<BookingLocale, OfficeCopy>;
@@ -51,7 +62,7 @@ export type TherapistDefinition = {
   photo?: string;
   profileAnchor: string;
   schedule: TherapistSchedule;
-  unavailableAt?: OfficeKey[];
+  availability?: TherapistAvailability;
 };
 
 export const OFFICE_DEFINITIONS: Record<OfficeKey, OfficeDefinition> = {
@@ -129,7 +140,9 @@ export const THERAPIST_DEFINITIONS: Record<TherapistKey, TherapistDefinition> = 
     contactPhone: "0883688414",
     photo: "/daniel.webp",
     profileAnchor: "daniel-mitev",
-    unavailableAt: ["studentski-grad"],
+    availability: {
+      "studentski-grad": { bookableFrom: "2026-08-25" },
+    },
     schedule: {
       "studentski-grad": {
         weekdays: { start: "13:00", end: "19:00" },
@@ -139,11 +152,13 @@ export const THERAPIST_DEFINITIONS: Record<TherapistKey, TherapistDefinition> = 
   },
   elitsa: {
     key: "elitsa",
-    name: { bg: "Елица Колева", en: "Elitsa Koleva" },
+    name: { bg: "Елица Митева", en: "Elitsa Miteva" },
     contactPhone: "0893673007",
     photo: "/elitsa.jpg",
     profileAnchor: "elitsa-koleva",
-    unavailableAt: ["studentski-grad"],
+    availability: {
+      "studentski-grad": { bookableFrom: "2026-08-25" },
+    },
     schedule: {
       "studentski-grad": {
         weekdays: { start: "08:00", end: "13:00" },
@@ -157,6 +172,12 @@ export const THERAPIST_DEFINITIONS: Record<TherapistKey, TherapistDefinition> = 
     contactPhone: "0898485320",
     photo: "/ivan.webp",
     profileAnchor: "ivan-mitev",
+    availability: {
+      "studentski-grad": {
+        bookableUntil: "2026-08-24",
+        visibleUntil: "2026-08-24",
+      },
+    },
     schedule: {
       "studentski-grad": {
         weekdays: { start: "14:00", end: "19:00" },
@@ -191,35 +212,90 @@ export function getTherapistDefinition(therapistKey: TherapistKey) {
   return THERAPIST_DEFINITIONS[therapistKey];
 }
 
-export function getOfficeTherapists(officeKey: OfficeKey) {
+function getSofiaDateKey(value?: string | Date | null) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+
+  const date = value instanceof Date ? value : new Date();
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Sofia",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function isWithinBookablePeriod(
+  officeKey: OfficeKey,
+  therapistKey: TherapistKey,
+  date?: string | Date | null
+) {
+  const rule = THERAPIST_DEFINITIONS[therapistKey].availability?.[officeKey];
+  const dateKey = getSofiaDateKey(date);
+  if (rule?.bookableFrom && dateKey < rule.bookableFrom) return false;
+  if (rule?.bookableUntil && dateKey > rule.bookableUntil) return false;
+  return true;
+}
+
+export function getOfficeTherapists(
+  officeKey: OfficeKey,
+  date?: string | Date | null
+) {
   return THERAPIST_ORDER.filter(
     (therapistKey) =>
       THERAPIST_DEFINITIONS[therapistKey].schedule[officeKey] &&
-      !isTherapistUnavailable(officeKey, therapistKey)
+      isWithinBookablePeriod(officeKey, therapistKey, date)
   );
 }
 
-export function getVisibleOfficeTherapists(officeKey: OfficeKey) {
+export function getVisibleOfficeTherapists(
+  officeKey: OfficeKey,
+  referenceDate?: string | Date | null
+) {
+  const dateKey = getSofiaDateKey(referenceDate);
   return THERAPIST_ORDER.filter(
-    (therapistKey) => THERAPIST_DEFINITIONS[therapistKey].schedule[officeKey]
+    (therapistKey) => {
+      const therapist = THERAPIST_DEFINITIONS[therapistKey];
+      const visibleUntil = therapist.availability?.[officeKey]?.visibleUntil;
+      return Boolean(
+        therapist.schedule[officeKey] &&
+          (!visibleUntil || dateKey <= visibleUntil)
+      );
+    }
   );
 }
 
 export function isTherapistUnavailable(
   officeKey: OfficeKey,
-  therapistKey: TherapistKey
+  therapistKey: TherapistKey,
+  date?: string | Date | null
 ) {
-  return Boolean(
-    THERAPIST_DEFINITIONS[therapistKey].unavailableAt?.includes(officeKey)
-  );
+  return !isWithinBookablePeriod(officeKey, therapistKey, date);
+}
+
+export function isTherapistSelectionDisabled(
+  officeKey: OfficeKey,
+  therapistKey: TherapistKey,
+  selectedDate?: string | Date | null,
+  referenceDate?: string | Date | null
+) {
+  if (!getVisibleOfficeTherapists(officeKey, referenceDate).includes(therapistKey)) {
+    return true;
+  }
+
+  const rule = THERAPIST_DEFINITIONS[therapistKey].availability?.[officeKey];
+  const selectedDateKey = getSofiaDateKey(selectedDate);
+  return Boolean(rule?.bookableUntil && selectedDateKey > rule.bookableUntil);
 }
 
 export function getTherapistShift(
   officeKey: OfficeKey,
   therapistKey: TherapistKey,
-  isSaturday: boolean
+  isSaturday: boolean,
+  date?: string | Date | null
 ) {
-  if (isTherapistUnavailable(officeKey, therapistKey)) return null;
+  if (isTherapistUnavailable(officeKey, therapistKey, date)) return null;
   const officeSchedule = THERAPIST_DEFINITIONS[therapistKey].schedule[officeKey];
   if (!officeSchedule) return null;
   return isSaturday
@@ -227,9 +303,13 @@ export function getTherapistShift(
     : officeSchedule.weekdays || null;
 }
 
-export function getTherapistSelectionOptions(officeKey: OfficeKey) {
-  const visibleTherapists = getVisibleOfficeTherapists(officeKey);
-  const availableTherapists = getOfficeTherapists(officeKey);
+export function getTherapistSelectionOptions(
+  officeKey: OfficeKey,
+  selectedDate?: string | Date | null,
+  referenceDate?: string | Date | null
+) {
+  const visibleTherapists = getVisibleOfficeTherapists(officeKey, referenceDate);
+  const availableTherapists = getOfficeTherapists(officeKey, selectedDate);
   if (availableTherapists.length <= 1) return visibleTherapists;
   return ["any", ...visibleTherapists] as TherapistSelectionKey[];
 }

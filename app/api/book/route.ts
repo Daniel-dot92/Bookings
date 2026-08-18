@@ -340,7 +340,7 @@ export async function POST(req: NextRequest) {
     const endUtc = new Date(startUtc.getTime() + dur * 60 * 1000);
     const isSaturday = dayName === "Sat";
 
-    const availableTherapists = getOfficeTherapists(location);
+    const availableTherapists = getOfficeTherapists(location, date);
     if (availableTherapists.length === 0) {
       return NextResponse.json(
         { ok: false, error: "Няма конфигурирани терапевти за този обект." },
@@ -362,7 +362,7 @@ export async function POST(req: NextRequest) {
         date,
         startUtc,
         endUtc,
-        getTherapistShift(location, therapistKey, isSaturday)
+        getTherapistShift(location, therapistKey, isSaturday, date)
       )
     );
 

@@ -128,7 +128,7 @@ export async function GET(req: NextRequest) {
     }
 
     const isSaturday = weekday === "Sat";
-    const officeTherapists = getOfficeTherapists(officeKey);
+    const officeTherapists = getOfficeTherapists(officeKey, date);
     if (
       therapistSelection !== "any" &&
       !officeTherapists.includes(therapistSelection)
@@ -139,9 +139,9 @@ export async function GET(req: NextRequest) {
     const shiftWindows =
       therapistSelection === "any"
         ? officeTherapists
-            .map((key) => getTherapistShift(officeKey, key, isSaturday))
+            .map((key) => getTherapistShift(officeKey, key, isSaturday, date))
             .filter(Boolean) as ShiftWindow[]
-        : [getTherapistShift(officeKey, therapistSelection, isSaturday)].filter(Boolean) as ShiftWindow[];
+        : [getTherapistShift(officeKey, therapistSelection, isSaturday, date)].filter(Boolean) as ShiftWindow[];
 
     if (shiftWindows.length === 0) {
       return NextResponse.json({ slots: [] });
