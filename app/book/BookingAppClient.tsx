@@ -12,6 +12,7 @@ import {
   getOfficeTherapists,
   getTherapistDefinition,
   getTherapistSelectionOptions,
+  getVisibleOfficeTherapists,
   isTherapistUnavailable,
   isTherapistSelectionDisabled,
 } from "@/app/lib/booking-config";
@@ -892,7 +893,7 @@ export default function BookingAppClient({
                   const office = getOfficeDefinition(key);
                   const active = officeKey === key;
                   const officeCopy = office.copy[locale];
-                  const therapistCount = getOfficeTherapists(key).length;
+                  const therapistCount = getVisibleOfficeTherapists(key).length;
 
                   return (
                     <div

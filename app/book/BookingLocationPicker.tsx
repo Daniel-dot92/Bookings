@@ -4,7 +4,7 @@ import {
   type BookingLocale,
   type OfficeKey,
   getOfficeDefinition,
-  getOfficeTherapists,
+  getVisibleOfficeTherapists,
 } from "@/app/lib/booking-config";
 
 const OFFICE_LINKS: Record<OfficeKey, string> = {
@@ -41,7 +41,7 @@ export default function BookingLocationPicker({ locale }: { locale: BookingLocal
             const office = getOfficeDefinition(key);
             const officeCopy = office.copy[locale];
             const href = isEn ? `/en${OFFICE_LINKS[key]}` : OFFICE_LINKS[key];
-            const therapistCount = getOfficeTherapists(key).length;
+            const therapistCount = getVisibleOfficeTherapists(key).length;
 
             return (
               <article
