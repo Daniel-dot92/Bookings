@@ -75,6 +75,11 @@ type CalendarReviewPrivateProps = ReviewPrivateProps & {
   officeKey?: string;
 };
 
+// Automatic completion starts here to avoid sending a historical review backlog.
+const REVIEW_AUTOMATION_CUTOVER_AT = new Date(
+  "2026-08-22T16:30:00+03:00"
+);
+
 function getPrivateProps(ev: {
   extendedProperties?: { private?: Record<string, string> | null } | null;
 }): CalendarReviewPrivateProps {
@@ -222,7 +227,10 @@ function getReviewAutomationStartAt() {
   if (!raw) return null;
 
   const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed > REVIEW_AUTOMATION_CUTOVER_AT
+    ? parsed
+    : REVIEW_AUTOMATION_CUTOVER_AT;
 }
 
 async function readBookingContactsFromSheet(args: {

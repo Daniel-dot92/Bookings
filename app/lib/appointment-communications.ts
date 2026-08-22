@@ -206,14 +206,14 @@ export function deriveAppointmentStatus(args: {
   now?: Date;
 }) {
   const explicit = (args.explicitStatus || "").trim().toLowerCase();
-  if (explicit === "scheduled") return "scheduled" as AppointmentStatus;
-  if (explicit === "completed") return "completed" as AppointmentStatus;
   if (explicit === "cancelled") return "cancelled" as AppointmentStatus;
   if (explicit === "no_show") return "no_show" as AppointmentStatus;
 
   if ((args.googleEventStatus || "").toLowerCase() === "cancelled") {
     return "cancelled" as AppointmentStatus;
   }
+
+  if (explicit === "completed") return "completed" as AppointmentStatus;
 
   const end = args.appointmentEnd;
   const now = args.now || new Date();
